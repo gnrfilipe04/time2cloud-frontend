@@ -141,9 +141,10 @@ export const TimesheetEntries = () => {
       render: (entry: TimesheetEntry) => {
 
         return (
-          <span className={statusColors[entry.status]}>
+          <span className={`inline-flex items-center rounded-md ${statusColors[entry.status]} px-2 py-1 text-xs font-medium inset-ring`}>
             {statusTexts[entry.status]}
           </span>
+
         );
       },
     },

@@ -134,7 +134,7 @@ export const Invoices = () => {
       label: 'Status',
       render: (invoice: Invoice) => {
         return (
-          <span className={statusColors[invoice.status]}>
+          <span className={`inline-flex items-center rounded-md ${statusColors[invoice.status]} px-2 py-1 text-xs font-medium inset-ring`}>
             {statusTexts[invoice.status]}
           </span>
         );
