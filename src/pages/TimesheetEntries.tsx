@@ -1,9 +1,28 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { TimesheetEntry, User, Project, TimesheetStatus } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input, Select, Textarea } from '../components/Input';
 import { statusColors, statusTexts } from '../constants';
+
+const timesheetEntrySchema = z.object({
+  userId: z.string().min(1, 'Usuário é obrigatório'),
+  projectId: z.string().min(1, 'Projeto é obrigatório'),
+  date: z.string().min(1, 'Data é obrigatória'),
+  hours: z.string().min(1, 'Horas é obrigatório').refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num > 0;
+  }, 'Horas deve ser um número maior que zero'),
+  activityType: z.string().min(1, 'Tipo de atividade é obrigatório'),
+  notes: z.string().optional(),
+  status: z.nativeEnum(TimesheetStatus),
+});
+
+type TimesheetEntryFormData = z.infer<typeof timesheetEntrySchema>;
 
 export const TimesheetEntries = () => {
   const [entries, setEntries] = useState<TimesheetEntry[]>([]);
@@ -12,14 +31,18 @@ export const TimesheetEntries = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimesheetEntry | null>(null);
-  const [formData, setFormData] = useState({
-    userId: '',
-    projectId: '',
-    date: '',
-    hours: '',
-    activityType: '',
-    notes: '',
-    status: TimesheetStatus.PENDING,
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<TimesheetEntryFormData>({
+    resolver: zodResolver(timesheetEntrySchema),
+    defaultValues: {
+      status: TimesheetStatus.PENDING,
+      date: new Date().toISOString().split('T')[0],
+    },
   });
 
   useEffect(() => {
@@ -45,7 +68,7 @@ export const TimesheetEntries = () => {
 
   const handleCreate = () => {
     setEditingEntry(null);
-    setFormData({
+    reset({
       userId: '',
       projectId: '',
       date: new Date().toISOString().split('T')[0],
@@ -59,7 +82,7 @@ export const TimesheetEntries = () => {
 
   const handleEdit = (entry: TimesheetEntry) => {
     setEditingEntry(entry);
-    setFormData({
+    reset({
       userId: entry.userId,
       projectId: entry.projectId,
       date: new Date(entry.date).toISOString().split('T')[0],
@@ -85,23 +108,22 @@ export const TimesheetEntries = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: TimesheetEntryFormData) => {
     try {
-      const data: any = {
-        userId: formData.userId,
-        projectId: formData.projectId,
-        date: new Date(formData.date),
-        hours: parseFloat(formData.hours),
-        activityType: formData.activityType,
-        notes: formData.notes || undefined,
-        status: formData.status,
+      const payload: any = {
+        userId: data.userId,
+        projectId: data.projectId,
+        date: new Date(data.date),
+        hours: parseFloat(data.hours),
+        activityType: data.activityType,
+        notes: data.notes || undefined,
+        status: data.status,
       };
 
       if (editingEntry) {
-        await api.patch(`/timesheet-entries/${editingEntry.id}`, data);
+        await api.patch(`/timesheet-entries/${editingEntry.id}`, payload);
       } else {
-        await api.post('/timesheet-entries', data);
+        await api.post('/timesheet-entries', payload);
       }
       setIsModalOpen(false);
       fetchData();
@@ -144,7 +166,6 @@ export const TimesheetEntries = () => {
           <span className={`inline-flex items-center rounded-md ${statusColors[entry.status]} px-2 py-1 text-xs font-medium inset-ring`}>
             {statusTexts[entry.status]}
           </span>
-
         );
       },
     },
@@ -175,93 +196,64 @@ export const TimesheetEntries = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingEntry ? 'Editar Lançamento' : 'Novo Lançamento'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Usuário *</label>
-            <select
-              required
-              className="input-base"
-              value={formData.userId}
-              onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-            >
-              <option value="">Selecione um usuário</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Projeto *</label>
-            <select
-              required
-              className="input-base"
-              value={formData.projectId}
-              onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-            >
-              <option value="">Selecione um projeto</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Data *</label>
-            <input
-              type="date"
-              required
-              className="input-base"
-              value={formData.date}
-              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Horas *</label>
-            <input
-              type="number"
-              step="0.5"
-              required
-              className="input-base"
-              value={formData.hours}
-              onChange={(e) => setFormData({ ...formData, hours: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Tipo de Atividade *</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.activityType}
-              onChange={(e) => setFormData({ ...formData, activityType: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Notas</label>
-            <textarea
-              className="input-base"
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows={3}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Status</label>
-            <select
-              className="input-base"
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as TimesheetStatus })}
-            >
-              {Object.values(TimesheetStatus).map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Select
+            label="Usuário"
+            required
+            register={register('userId')}
+            error={errors.userId?.message}
+            options={[
+              { value: '', label: 'Selecione um usuário' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+          />
+          <Select
+            label="Projeto"
+            required
+            register={register('projectId')}
+            error={errors.projectId?.message}
+            options={[
+              { value: '', label: 'Selecione um projeto' },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
+          <Input
+            type="date"
+            label="Data"
+            required
+            register={register('date')}
+            error={errors.date?.message}
+          />
+          <Input
+            type="number"
+            step="0.5"
+            label="Horas"
+            required
+            register={register('hours')}
+            error={errors.hours?.message}
+          />
+          <Input
+            type="text"
+            label="Tipo de Atividade"
+            required
+            register={register('activityType')}
+            error={errors.activityType?.message}
+          />
+          <Textarea
+            label="Notas"
+            rows={3}
+            register={register('notes')}
+            error={errors.notes?.message}
+          />
+          <Select
+            label="Status"
+            register={register('status')}
+            error={errors.status?.message}
+            options={Object.values(TimesheetStatus).map((status) => ({
+              value: status,
+              label: status,
+            }))}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

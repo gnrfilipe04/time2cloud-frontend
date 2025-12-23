@@ -1,8 +1,25 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { Project, Client, Company, User } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input, Select } from '../components/Input';
+
+const projectSchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório'),
+  clientId: z.string().min(1, 'Cliente é obrigatório'),
+  companyId: z.string().optional(),
+  managerId: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  status: z.string().min(1, 'Status é obrigatório'),
+  costCenter: z.string().optional(),
+});
+
+type ProjectFormData = z.infer<typeof projectSchema>;
 
 export const Projects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -12,15 +29,14 @@ export const Projects = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    clientId: '',
-    companyId: '',
-    managerId: '',
-    startDate: '',
-    endDate: '',
-    status: '',
-    costCenter: '',
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ProjectFormData>({
+    resolver: zodResolver(projectSchema),
   });
 
   useEffect(() => {
@@ -48,7 +64,7 @@ export const Projects = () => {
 
   const handleCreate = () => {
     setEditingProject(null);
-    setFormData({
+    reset({
       name: '',
       clientId: '',
       companyId: '',
@@ -63,7 +79,7 @@ export const Projects = () => {
 
   const handleEdit = (project: Project) => {
     setEditingProject(project);
-    setFormData({
+    reset({
       name: project.name,
       clientId: project.clientId,
       companyId: project.companyId || '',
@@ -90,23 +106,21 @@ export const Projects = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: ProjectFormData) => {
     try {
-      const data: any = {
-        ...formData,
-        clientId: formData.clientId,
-        companyId: formData.companyId || undefined,
-        managerId: formData.managerId || undefined,
-        startDate: formData.startDate ? new Date(formData.startDate) : undefined,
-        endDate: formData.endDate ? new Date(formData.endDate) : undefined,
-        costCenter: formData.costCenter || undefined,
+      const payload: any = {
+        ...data,
+        companyId: data.companyId || undefined,
+        managerId: data.managerId || undefined,
+        startDate: data.startDate ? new Date(data.startDate) : undefined,
+        endDate: data.endDate ? new Date(data.endDate) : undefined,
+        costCenter: data.costCenter || undefined,
       };
 
       if (editingProject) {
-        await api.patch(`/projects/${editingProject.id}`, data);
+        await api.patch(`/projects/${editingProject.id}`, payload);
       } else {
-        await api.post('/projects', data);
+        await api.post('/projects', payload);
       }
       setIsModalOpen(false);
       fetchData();
@@ -126,6 +140,9 @@ export const Projects = () => {
     {
       key: 'status',
       label: 'Status',
+      render: (project: Project) => {
+        return project.status === 'ACTIVE' ? 'Ativo' : 'Inativo';
+      },
     },
     {
       key: 'manager',
@@ -159,100 +176,67 @@ export const Projects = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingProject ? 'Editar Projeto' : 'Novo Projeto'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Nome</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Cliente *</label>
-            <select
-              required
-              className="input-base"
-              value={formData.clientId}
-              onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-            >
-              <option value="">Selecione um cliente</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Empresa</label>
-            <select
-              className="input-base"
-              value={formData.companyId}
-              onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
-            >
-              <option value="">Nenhuma</option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Gerente</label>
-            <select
-              className="input-base"
-              value={formData.managerId}
-              onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
-            >
-              <option value="">Nenhum</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Data de Início</label>
-            <input
-              type="date"
-              className="input-base"
-              value={formData.startDate}
-              onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Data de Término</label>
-            <input
-              type="date"
-              className="input-base"
-              value={formData.endDate}
-              onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Status</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Centro de Custo</label>
-            <input
-              type="text"
-              className="input-base"
-              value={formData.costCenter}
-              onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })}
-            />
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Input
+            type="text"
+            label="Nome"
+            required
+            register={register('name')}
+            error={errors.name?.message}
+          />
+          <Select
+            label="Cliente"
+            required
+            register={register('clientId')}
+            error={errors.clientId?.message}
+            options={[
+              { value: '', label: 'Selecione um cliente' },
+              ...clients.map((client) => ({ value: client.id, label: client.name })),
+            ]}
+          />
+          <Select
+            label="Empresa"
+            register={register('companyId')}
+            error={errors.companyId?.message}
+            options={[
+              { value: '', label: 'Nenhuma' },
+              ...companies.map((company) => ({ value: company.id, label: company.name })),
+            ]}
+          />
+          <Select
+            label="Gerente"
+            register={register('managerId')}
+            error={errors.managerId?.message}
+            options={[
+              { value: '', label: 'Nenhum' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+          />
+          <Input
+            type="date"
+            label="Data de Início"
+            register={register('startDate')}
+            error={errors.startDate?.message}
+          />
+          <Input
+            type="date"
+            label="Data de Término"
+            register={register('endDate')}
+            error={errors.endDate?.message}
+          />
+          <Input
+            type="text"
+            label="Status"
+            required
+            register={register('status')}
+            error={errors.status?.message}
+          />
+          <Input
+            type="text"
+            label="Centro de Custo"
+            register={register('costCenter')}
+            error={errors.costCenter?.message}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

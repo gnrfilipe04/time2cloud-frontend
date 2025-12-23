@@ -1,18 +1,34 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { Client } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input } from '../components/Input';
+
+const clientSchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório'),
+  cnpj: z.string().optional(),
+  mainContact: z.string().optional(),
+});
+
+type ClientFormData = z.infer<typeof clientSchema>;
 
 export const Clients = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    cnpj: '',
-    mainContact: '',
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ClientFormData>({
+    resolver: zodResolver(clientSchema),
   });
 
   useEffect(() => {
@@ -32,13 +48,13 @@ export const Clients = () => {
 
   const handleCreate = () => {
     setEditingClient(null);
-    setFormData({ name: '', cnpj: '', mainContact: '' });
+    reset({ name: '', cnpj: '', mainContact: '' });
     setIsModalOpen(true);
   };
 
   const handleEdit = (client: Client) => {
     setEditingClient(client);
-    setFormData({
+    reset({
       name: client.name,
       cnpj: client.cnpj || '',
       mainContact: client.mainContact || '',
@@ -60,13 +76,12 @@ export const Clients = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: ClientFormData) => {
     try {
       if (editingClient) {
-        await api.patch(`/clients/${editingClient.id}`, formData);
+        await api.patch(`/clients/${editingClient.id}`, data);
       } else {
-        await api.post('/clients', formData);
+        await api.post('/clients', data);
       }
       setIsModalOpen(false);
       fetchClients();
@@ -107,35 +122,26 @@ export const Clients = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingClient ? 'Editar Cliente' : 'Novo Cliente'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Nome</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">CNPJ</label>
-            <input
-              type="text"
-              className="input-base"
-              value={formData.cnpj}
-              onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Contato Principal</label>
-            <input
-              type="text"
-              className="input-base"
-              value={formData.mainContact}
-              onChange={(e) => setFormData({ ...formData, mainContact: e.target.value })}
-            />
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Input
+            type="text"
+            label="Nome"
+            required
+            register={register('name')}
+            error={errors.name?.message}
+          />
+          <Input
+            type="text"
+            label="CNPJ"
+            register={register('cnpj')}
+            error={errors.cnpj?.message}
+          />
+          <Input
+            type="text"
+            label="Contato Principal"
+            register={register('mainContact')}
+            error={errors.mainContact?.message}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

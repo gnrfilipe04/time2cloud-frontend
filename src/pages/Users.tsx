@@ -1,21 +1,41 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { User, UserRole } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input, Select, Checkbox } from '../components/Input';
+
+const userSchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório'),
+  email: z.string().email('Email inválido').min(1, 'Email é obrigatório'),
+  password: z.string().optional(),
+  role: z.nativeEnum(UserRole),
+  contractType: z.string().optional(),
+  isActive: z.boolean(),
+});
+
+type UserFormData = z.infer<typeof userSchema>;
 
 export const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    role: UserRole.CONSULTANT,
-    contractType: '',
-    isActive: true,
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<UserFormData>({
+    resolver: zodResolver(userSchema),
+    defaultValues: {
+      role: UserRole.CONSULTANT,
+      isActive: true,
+    },
   });
 
   useEffect(() => {
@@ -35,7 +55,7 @@ export const Users = () => {
 
   const handleCreate = () => {
     setEditingUser(null);
-    setFormData({
+    reset({
       name: '',
       email: '',
       password: '',
@@ -48,7 +68,7 @@ export const Users = () => {
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    setFormData({
+    reset({
       name: user.name,
       email: user.email,
       password: '',
@@ -73,17 +93,20 @@ export const Users = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: UserFormData) => {
     try {
       if (editingUser) {
-        const updateData: any = { ...formData };
-        if (!updateData.password) {
+        const updateData: any = { ...data };
+        if (!updateData.password || updateData.password === '') {
           delete updateData.password;
         }
         await api.patch(`/users/${editingUser.id}`, updateData);
       } else {
-        await api.post('/users', formData);
+        if (!data.password || data.password === '') {
+          alert('Senha é obrigatória para novos usuários');
+          return;
+        }
+        await api.post('/users', data);
       }
       setIsModalOpen(false);
       fetchUsers();
@@ -130,74 +153,48 @@ export const Users = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingUser ? 'Editar Usuário' : 'Novo Usuário'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Nome</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Email</label>
-            <input
-              type="email"
-              required
-              className="input-base"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">
-              Senha {editingUser && '(deixe em branco para não alterar)'}
-            </label>
-            <input
-              type="password"
-              required={!editingUser}
-              className="input-base"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Função</label>
-            <select
-              className="input-base"
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-            >
-              {Object.values(UserRole).map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Tipo de Contrato</label>
-            <input
-              type="text"
-              className="input-base"
-              value={formData.contractType}
-              onChange={(e) => setFormData({ ...formData, contractType: e.target.value })}
-            />
-          </div>
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isActive"
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              checked={formData.isActive}
-              onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-            />
-            <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
-              Ativo
-            </label>
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Input
+            type="text"
+            label="Nome"
+            required
+            register={register('name')}
+            error={errors.name?.message}
+          />
+          <Input
+            type="email"
+            label="Email"
+            required
+            register={register('email')}
+            error={errors.email?.message}
+          />
+          <Input
+            type="password"
+            label={editingUser ? 'Senha (deixe em branco para não alterar)' : 'Senha'}
+            required={!editingUser}
+            register={register('password')}
+            error={errors.password?.message}
+          />
+          <Select
+            label="Função"
+            register={register('role')}
+            error={errors.role?.message}
+            options={Object.values(UserRole).map((role) => ({
+              value: role,
+              label: role,
+            }))}
+          />
+          <Input
+            type="text"
+            label="Tipo de Contrato"
+            register={register('contractType')}
+            error={errors.contractType?.message}
+          />
+          <Checkbox
+            label="Ativo"
+            register={register('isActive')}
+            error={errors.isActive?.message}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

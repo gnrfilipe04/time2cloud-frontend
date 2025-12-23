@@ -1,9 +1,28 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { Invoice, User, InvoiceStatus } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input, Select } from '../components/Input';
 import { statusColors, statusTexts } from '../constants';
+
+const invoiceSchema = z.object({
+  userId: z.string().min(1, 'Usuário é obrigatório'),
+  periodStart: z.string().min(1, 'Data de início é obrigatória'),
+  periodEnd: z.string().min(1, 'Data de fim é obrigatória'),
+  value: z.string().min(1, 'Valor é obrigatório').refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num > 0;
+  }, 'Valor deve ser um número maior que zero'),
+  cnpj: z.string().min(1, 'CNPJ é obrigatório'),
+  filePath: z.string().min(1, 'Caminho do arquivo é obrigatório'),
+  status: z.nativeEnum(InvoiceStatus),
+});
+
+type InvoiceFormData = z.infer<typeof invoiceSchema>;
 
 export const Invoices = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -11,14 +30,17 @@ export const Invoices = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [formData, setFormData] = useState({
-    userId: '',
-    periodStart: '',
-    periodEnd: '',
-    value: '',
-    cnpj: '',
-    filePath: '',
-    status: InvoiceStatus.PENDING,
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<InvoiceFormData>({
+    resolver: zodResolver(invoiceSchema),
+    defaultValues: {
+      status: InvoiceStatus.PENDING,
+    },
   });
 
   useEffect(() => {
@@ -42,7 +64,7 @@ export const Invoices = () => {
 
   const handleCreate = () => {
     setEditingInvoice(null);
-    setFormData({
+    reset({
       userId: '',
       periodStart: '',
       periodEnd: '',
@@ -56,7 +78,7 @@ export const Invoices = () => {
 
   const handleEdit = (invoice: Invoice) => {
     setEditingInvoice(invoice);
-    setFormData({
+    reset({
       userId: invoice.userId,
       periodStart: new Date(invoice.periodStart).toISOString().split('T')[0],
       periodEnd: new Date(invoice.periodEnd).toISOString().split('T')[0],
@@ -82,23 +104,22 @@ export const Invoices = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: InvoiceFormData) => {
     try {
-      const data: any = {
-        userId: formData.userId,
-        periodStart: new Date(formData.periodStart),
-        periodEnd: new Date(formData.periodEnd),
-        value: parseFloat(formData.value),
-        cnpj: formData.cnpj,
-        filePath: formData.filePath,
-        status: formData.status,
+      const payload: any = {
+        userId: data.userId,
+        periodStart: new Date(data.periodStart),
+        periodEnd: new Date(data.periodEnd),
+        value: parseFloat(data.value),
+        cnpj: data.cnpj,
+        filePath: data.filePath,
+        status: data.status,
       };
 
       if (editingInvoice) {
-        await api.patch(`/invoices/${editingInvoice.id}`, data);
+        await api.patch(`/invoices/${editingInvoice.id}`, payload);
       } else {
-        await api.post('/invoices', data);
+        await api.post('/invoices', payload);
       }
       setIsModalOpen(false);
       fetchData();
@@ -167,88 +188,62 @@ export const Invoices = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingInvoice ? 'Editar Fatura' : 'Nova Fatura'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Usuário *</label>
-            <select
-              required
-              className="input-base"
-              value={formData.userId}
-              onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-            >
-              <option value="">Selecione um usuário</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Início do Período *</label>
-            <input
-              type="date"
-              required
-              className="input-base"
-              value={formData.periodStart}
-              onChange={(e) => setFormData({ ...formData, periodStart: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Fim do Período *</label>
-            <input
-              type="date"
-              required
-              className="input-base"
-              value={formData.periodEnd}
-              onChange={(e) => setFormData({ ...formData, periodEnd: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Valor *</label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              className="input-base"
-              value={formData.value}
-              onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">CNPJ *</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.cnpj}
-              onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Caminho do Arquivo *</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.filePath}
-              onChange={(e) => setFormData({ ...formData, filePath: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Status</label>
-            <select
-              className="input-base"
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as InvoiceStatus })}
-            >
-              {Object.values(InvoiceStatus).map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Select
+            label="Usuário"
+            required
+            register={register('userId')}
+            error={errors.userId?.message}
+            options={[
+              { value: '', label: 'Selecione um usuário' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+          />
+          <Input
+            type="date"
+            label="Início do Período"
+            required
+            register={register('periodStart')}
+            error={errors.periodStart?.message}
+          />
+          <Input
+            type="date"
+            label="Fim do Período"
+            required
+            register={register('periodEnd')}
+            error={errors.periodEnd?.message}
+          />
+          <Input
+            type="number"
+            step="0.01"
+            label="Valor"
+            required
+            register={register('value')}
+            error={errors.value?.message}
+          />
+          <Input
+            type="text"
+            label="CNPJ"
+            required
+            register={register('cnpj')}
+            error={errors.cnpj?.message}
+          />
+          <Input
+            type="text"
+            label="Caminho do Arquivo"
+            required
+            register={register('filePath')}
+            error={errors.filePath?.message}
+          />
+          <Select
+            label="Status"
+            register={register('status')}
+            error={errors.status?.message}
+            options={Object.values(InvoiceStatus).map((status) => ({
+              value: status,
+              label: status,
+            }))}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

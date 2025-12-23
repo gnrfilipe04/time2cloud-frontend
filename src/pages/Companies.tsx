@@ -1,18 +1,34 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { Company } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input, Textarea } from '../components/Input';
+
+const companySchema = z.object({
+  name: z.string().min(1, 'Nome é obrigatório'),
+  cnpj: z.string().optional(),
+  bankInfo: z.string().optional(),
+});
+
+type CompanyFormData = z.infer<typeof companySchema>;
 
 export const Companies = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    cnpj: '',
-    bankInfo: '',
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<CompanyFormData>({
+    resolver: zodResolver(companySchema),
   });
 
   useEffect(() => {
@@ -32,13 +48,13 @@ export const Companies = () => {
 
   const handleCreate = () => {
     setEditingCompany(null);
-    setFormData({ name: '', cnpj: '', bankInfo: '' });
+    reset({ name: '', cnpj: '', bankInfo: '' });
     setIsModalOpen(true);
   };
 
   const handleEdit = (company: Company) => {
     setEditingCompany(company);
-    setFormData({
+    reset({
       name: company.name,
       cnpj: company.cnpj || '',
       bankInfo: company.bankInfo || '',
@@ -60,13 +76,12 @@ export const Companies = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: CompanyFormData) => {
     try {
       if (editingCompany) {
-        await api.patch(`/companies/${editingCompany.id}`, formData);
+        await api.patch(`/companies/${editingCompany.id}`, data);
       } else {
-        await api.post('/companies', formData);
+        await api.post('/companies', data);
       }
       setIsModalOpen(false);
       fetchCompanies();
@@ -107,35 +122,26 @@ export const Companies = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingCompany ? 'Editar Empresa' : 'Nova Empresa'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Nome</label>
-            <input
-              type="text"
-              required
-              className="input-base"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">CNPJ</label>
-            <input
-              type="text"
-              className="input-base"
-              value={formData.cnpj}
-              onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Informações Bancárias</label>
-            <textarea
-              className="input-base"
-              value={formData.bankInfo}
-              onChange={(e) => setFormData({ ...formData, bankInfo: e.target.value })}
-              rows={3}
-            />
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Input
+            type="text"
+            label="Nome"
+            required
+            register={register('name')}
+            error={errors.name?.message}
+          />
+          <Input
+            type="text"
+            label="CNPJ"
+            register={register('cnpj')}
+            error={errors.cnpj?.message}
+          />
+          <Textarea
+            label="Informações Bancárias"
+            rows={3}
+            register={register('bankInfo')}
+            error={errors.bankInfo?.message}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

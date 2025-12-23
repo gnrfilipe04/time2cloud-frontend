@@ -1,8 +1,26 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { api } from '../config/api';
 import { ProjectAssignment, User, Project, FunctionRole } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Input, Select, Checkbox } from '../components/Input';
+
+const projectAssignmentSchema = z.object({
+  userId: z.string().min(1, 'Usuário é obrigatório'),
+  projectId: z.string().min(1, 'Projeto é obrigatório'),
+  functionRoleId: z.string().optional(),
+  estimatedHours: z.string().optional().refine((val) => {
+    if (!val || val === '') return true;
+    const num = parseInt(val);
+    return !isNaN(num) && num > 0;
+  }, 'Horas estimadas deve ser um número maior que zero'),
+  isActive: z.boolean(),
+});
+
+type ProjectAssignmentFormData = z.infer<typeof projectAssignmentSchema>;
 
 export const ProjectAssignments = () => {
   const [assignments, setAssignments] = useState<ProjectAssignment[]>([]);
@@ -12,12 +30,17 @@ export const ProjectAssignments = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<ProjectAssignment | null>(null);
-  const [formData, setFormData] = useState({
-    userId: '',
-    projectId: '',
-    functionRoleId: '',
-    estimatedHours: '',
-    isActive: true,
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ProjectAssignmentFormData>({
+    resolver: zodResolver(projectAssignmentSchema),
+    defaultValues: {
+      isActive: true,
+    },
   });
 
   useEffect(() => {
@@ -45,7 +68,7 @@ export const ProjectAssignments = () => {
 
   const handleCreate = () => {
     setEditingAssignment(null);
-    setFormData({
+    reset({
       userId: '',
       projectId: '',
       functionRoleId: '',
@@ -57,7 +80,7 @@ export const ProjectAssignments = () => {
 
   const handleEdit = (assignment: ProjectAssignment) => {
     setEditingAssignment(assignment);
-    setFormData({
+    reset({
       userId: assignment.userId,
       projectId: assignment.projectId,
       functionRoleId: assignment.functionRoleId || '',
@@ -81,21 +104,20 @@ export const ProjectAssignments = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: ProjectAssignmentFormData) => {
     try {
-      const data: any = {
-        userId: formData.userId,
-        projectId: formData.projectId,
-        functionRoleId: formData.functionRoleId || undefined,
-        estimatedHours: formData.estimatedHours ? parseInt(formData.estimatedHours) : undefined,
-        isActive: formData.isActive,
+      const payload: any = {
+        userId: data.userId,
+        projectId: data.projectId,
+        functionRoleId: data.functionRoleId || undefined,
+        estimatedHours: data.estimatedHours ? parseInt(data.estimatedHours) : undefined,
+        isActive: data.isActive,
       };
 
       if (editingAssignment) {
-        await api.patch(`/project-assignments/${editingAssignment.id}`, data);
+        await api.patch(`/project-assignments/${editingAssignment.id}`, payload);
       } else {
-        await api.post('/project-assignments', data);
+        await api.post('/project-assignments', payload);
       }
       setIsModalOpen(false);
       fetchData();
@@ -157,75 +179,47 @@ export const ProjectAssignments = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingAssignment ? 'Editar Atribuição' : 'Nova Atribuição'}
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Usuário *</label>
-            <select
-              required
-              className="input-base"
-              value={formData.userId}
-              onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-            >
-              <option value="">Selecione um usuário</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Projeto *</label>
-            <select
-              required
-              className="input-base"
-              value={formData.projectId}
-              onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-            >
-              <option value="">Selecione um projeto</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Função</label>
-            <select
-              className="input-base"
-              value={formData.functionRoleId}
-              onChange={(e) => setFormData({ ...formData, functionRoleId: e.target.value })}
-            >
-              <option value="">Nenhuma</option>
-              {functionRoles.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-secondary-700">Horas Estimadas</label>
-            <input
-              type="number"
-              className="input-base"
-              value={formData.estimatedHours}
-              onChange={(e) => setFormData({ ...formData, estimatedHours: e.target.value })}
-            />
-          </div>
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isActive"
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              checked={formData.isActive}
-              onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-            />
-            <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
-              Ativo
-            </label>
-          </div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Select
+            label="Usuário"
+            required
+            register={register('userId')}
+            error={errors.userId?.message}
+            options={[
+              { value: '', label: 'Selecione um usuário' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+          />
+          <Select
+            label="Projeto"
+            required
+            register={register('projectId')}
+            error={errors.projectId?.message}
+            options={[
+              { value: '', label: 'Selecione um projeto' },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
+          <Select
+            label="Função"
+            register={register('functionRoleId')}
+            error={errors.functionRoleId?.message}
+            options={[
+              { value: '', label: 'Nenhuma' },
+              ...functionRoles.map((role) => ({ value: role.id, label: role.name })),
+            ]}
+          />
+          <Input
+            type="number"
+            label="Horas Estimadas"
+            register={register('estimatedHours')}
+            error={errors.estimatedHours?.message}
+          />
+          <Checkbox
+            label="Ativo"
+            register={register('isActive')}
+            error={errors.isActive?.message}
+          />
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

@@ -1,22 +1,38 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { useAuth } from '../contexts/AuthContext';
+import { Input } from '../components/Input';
+
+const loginSchema = z.object({
+  email: z.string().email('Email inválido').min(1, 'Email é obrigatório'),
+  password: z.string().min(1, 'Senha é obrigatória'),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
 
 export const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  const onSubmit = async (data: LoginFormData) => {
     setError('');
     setLoading(true);
 
     try {
-      await login({ email, password });
+      await login(data);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Erro ao fazer login. Verifique suas credenciais.');
@@ -36,7 +52,7 @@ export const Login = () => {
             Faça login em sua conta
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           {error && (
             <div className="bg-error-50 border border-error-300 text-error-700 px-4 py-3 rounded-md">
               {error}
@@ -47,32 +63,28 @@ export const Login = () => {
               <label htmlFor="email" className="sr-only">
                 Email
               </label>
-              <input
+              <Input
                 id="email"
-                name="email"
                 type="email"
                 autoComplete="email"
-                required
-                className="input-base rounded-t-md"
                 placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                className="rounded-t-md"
+                register={register('email')}
+                error={errors.email?.message}
               />
             </div>
             <div>
               <label htmlFor="password" className="sr-only">
                 Senha
               </label>
-              <input
+              <Input
                 id="password"
-                name="password"
                 type="password"
                 autoComplete="current-password"
-                required
-                className="input-base rounded-b-md"
                 placeholder="Senha"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                className="rounded-b-md"
+                register={register('password')}
+                error={errors.password?.message}
               />
             </div>
           </div>
