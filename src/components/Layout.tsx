@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getAccessibleRoutes } from '../utils/permissions';
+import { Avatar } from './Avatar';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -44,8 +45,14 @@ export const Layout = ({ children }: LayoutProps) => {
                 ))}
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-secondary-700 font-medium">{user?.name || user?.email}</span>
+            <div className="flex items-center space-x-3">
+              {user && (
+                <Avatar
+                  name={user.name || user.email}
+                  imageUrl={undefined} // Pode ser adicionado quando houver campo de foto no User
+                  size="md"
+                />
+              )}
               <button
                 onClick={handleLogout}
                 className="btn-error text-sm"
