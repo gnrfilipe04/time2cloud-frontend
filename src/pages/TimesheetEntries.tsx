@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '../config/api';
-import { TimesheetEntry, User, Project, TimesheetStatus } from '../types';
+import { TimesheetEntry, User, Project, TimesheetStatus, UserRole } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Select, Textarea } from '../components/Input';
+import { SelectSearchable } from '../components/SelectSearchable';
 import { statusColors, statusTexts } from '../constants';
+import { useAuth } from '../contexts/AuthContext';
 
-const timesheetEntrySchema = z.object({
+const baseTimesheetEntrySchema = {
   userId: z.string().min(1, 'Usuário é obrigatório'),
   projectId: z.string().min(1, 'Projeto é obrigatório'),
   date: z.string().min(1, 'Data é obrigatória'),
@@ -19,23 +21,39 @@ const timesheetEntrySchema = z.object({
   }, 'Horas deve ser um número maior que zero'),
   activityType: z.string().min(1, 'Tipo de atividade é obrigatório'),
   notes: z.string().optional(),
+};
+
+const timesheetEntrySchema = z.object({
+  ...baseTimesheetEntrySchema,
   status: z.nativeEnum(TimesheetStatus),
 });
 
 type TimesheetEntryFormData = z.infer<typeof timesheetEntrySchema>;
 
 export const TimesheetEntries = () => {
+  const { user: currentUser } = useAuth();
   const [entries, setEntries] = useState<TimesheetEntry[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimesheetEntry | null>(null);
+  
+  // Filtros para ADMIN
+  const [filterUser, setFilterUser] = useState<string>('');
+  const [filterProject, setFilterProject] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [filterDate, setFilterDate] = useState<string>('');
+
+  const isConsultant = currentUser?.role === UserRole.CONSULTANT;
+  const isAdmin = currentUser?.role === UserRole.ADMIN;
 
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<TimesheetEntryFormData>({
     resolver: zodResolver(timesheetEntrySchema),
@@ -44,6 +62,8 @@ export const TimesheetEntries = () => {
       date: new Date().toISOString().split('T')[0],
     },
   });
+
+  const watchedUserId = watch('userId');
 
   useEffect(() => {
     fetchData();
@@ -69,7 +89,7 @@ export const TimesheetEntries = () => {
   const handleCreate = () => {
     setEditingEntry(null);
     reset({
-      userId: '',
+      userId: isConsultant ? currentUser?.id || '' : '',
       projectId: '',
       date: new Date().toISOString().split('T')[0],
       hours: '',
@@ -81,6 +101,12 @@ export const TimesheetEntries = () => {
   };
 
   const handleEdit = (entry: TimesheetEntry) => {
+    // CONSULTANT só pode editar seus próprios lançamentos
+    if (isConsultant && entry.userId !== currentUser?.id) {
+      alert('Você não tem permissão para editar este lançamento');
+      return;
+    }
+    
     setEditingEntry(entry);
     reset({
       userId: entry.userId,
@@ -95,6 +121,12 @@ export const TimesheetEntries = () => {
   };
 
   const handleDelete = async (entry: TimesheetEntry) => {
+    // CONSULTANT só pode excluir seus próprios lançamentos
+    if (isConsultant && entry.userId !== currentUser?.id) {
+      alert('Você não tem permissão para excluir este lançamento');
+      return;
+    }
+
     if (!confirm('Tem certeza que deseja excluir este lançamento?')) {
       return;
     }
@@ -117,7 +149,8 @@ export const TimesheetEntries = () => {
         hours: parseFloat(data.hours),
         activityType: data.activityType,
         notes: data.notes || undefined,
-        status: data.status,
+        // CONSULTANT sempre usa PENDING, ADMIN pode escolher
+        status: isConsultant ? TimesheetStatus.PENDING : (data.status || TimesheetStatus.PENDING),
       };
 
       if (editingEntry) {
@@ -133,10 +166,28 @@ export const TimesheetEntries = () => {
     }
   };
 
+  const handleStatusChange = async (entry: TimesheetEntry, newStatus: TimesheetStatus) => {
+    try {
+      await api.patch(`/timesheet-entries/${entry.id}`, {
+        status: newStatus,
+      });
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao alterar status:', error);
+      alert(error.response?.data?.message || 'Erro ao alterar status');
+    }
+  };
+
   const handleDuplicate = (entry: TimesheetEntry) => {
+    // CONSULTANT só pode duplicar seus próprios lançamentos
+    if (isConsultant && entry.userId !== currentUser?.id) {
+      alert('Você não tem permissão para duplicar este lançamento');
+      return;
+    }
+    
     setEditingEntry(null);
     reset({
-      userId: entry.userId,
+      userId: isConsultant ? currentUser?.id || '' : entry.userId,
       projectId: entry.projectId,
       date: new Date(entry.date).toISOString().split('T')[0],
       hours: entry.hours.toString(),
@@ -147,11 +198,37 @@ export const TimesheetEntries = () => {
     setIsModalOpen(true);
   };
 
-  // Agrupa lançamentos por data
-  const groupEntriesByDate = () => {
+  // Filtra e agrupa lançamentos por data
+  const filteredAndGroupedEntries = useMemo(() => {
+    // Aplica filtros
+    let filtered = entries;
+
+    if (isAdmin) {
+      if (filterUser) {
+        filtered = filtered.filter((e) => e.userId === filterUser);
+      }
+      if (filterProject) {
+        filtered = filtered.filter((e) => e.projectId === filterProject);
+      }
+      if (filterStatus) {
+        filtered = filtered.filter((e) => e.status === filterStatus);
+      }
+      if (filterDate) {
+        const filterDateKey = new Date(filterDate).toISOString().split('T')[0];
+        filtered = filtered.filter((e) => {
+          const entryDateKey = new Date(e.date).toISOString().split('T')[0];
+          return entryDateKey === filterDateKey;
+        });
+      }
+    } else if (isConsultant) {
+      // CONSULTANT só vê seus próprios lançamentos
+      filtered = filtered.filter((e) => e.userId === currentUser?.id);
+    }
+
+    // Agrupa por data
     const grouped: { [key: string]: TimesheetEntry[] } = {};
     
-    entries.forEach((entry) => {
+    filtered.forEach((entry) => {
       const dateKey = new Date(entry.date).toISOString().split('T')[0];
       if (!grouped[dateKey]) {
         grouped[dateKey] = [];
@@ -168,7 +245,7 @@ export const TimesheetEntries = () => {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         ),
       }));
-  };
+  }, [entries, filterUser, filterProject, filterStatus, filterDate, isAdmin, isConsultant, currentUser?.id]);
 
   const formatDateHeader = (dateString: string) => {
     const date = new Date(dateString);
@@ -196,11 +273,11 @@ export const TimesheetEntries = () => {
   };
 
   const columns = [
-    {
+    ...(isAdmin ? [{
       key: 'user',
       label: 'Usuário',
       render: (entry: TimesheetEntry) => entry.user?.name || '-',
-    },
+    }] : []),
     {
       key: 'project',
       label: 'Projeto',
@@ -218,6 +295,21 @@ export const TimesheetEntries = () => {
       key: 'status',
       label: 'Status',
       render: (entry: TimesheetEntry) => {
+        if (isAdmin) {
+          return (
+            <select
+              className="input-base text-sm py-1"
+              value={entry.status}
+              onChange={(e) => handleStatusChange(entry, e.target.value as TimesheetStatus)}
+            >
+              {Object.values(TimesheetStatus).map((status) => (
+                <option key={status} value={status}>
+                  {statusTexts[status]}
+                </option>
+              ))}
+            </select>
+          );
+        }
         return (
           <span className={`inline-flex items-center rounded-md ${statusColors[entry.status]} px-2 py-1 text-xs font-medium inset-ring`}>
             {statusTexts[entry.status]}
@@ -226,8 +318,6 @@ export const TimesheetEntries = () => {
       },
     },
   ];
-
-  const groupedEntries = groupEntriesByDate();
 
   return (
     <div>
@@ -241,18 +331,86 @@ export const TimesheetEntries = () => {
         </button>
       </div>
 
+      {/* Filtros para ADMIN */}
+      {isAdmin && (
+        <div className="card mb-6">
+          <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <SelectSearchable
+              label="Usuário"
+              value={filterUser}
+              onChange={setFilterUser}
+              options={[
+                { value: '', label: 'Todos os usuários' },
+                ...users.map((user) => ({ value: user.id, label: user.name })),
+              ]}
+              placeholder="Todos os usuários"
+            />
+            <SelectSearchable
+              label="Projeto"
+              value={filterProject}
+              onChange={setFilterProject}
+              options={[
+                { value: '', label: 'Todos os projetos' },
+                ...projects.map((project) => ({ value: project.id, label: project.name })),
+              ]}
+              placeholder="Todos os projetos"
+            />
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
+              <select
+                className="input-base"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">Todos os status</option>
+                {Object.values(TimesheetStatus).map((status) => (
+                  <option key={status} value={status}>
+                    {statusTexts[status]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-1">Data</label>
+              <input
+                type="date"
+                className="input-base"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+              />
+            </div>
+          </div>
+          {(filterUser || filterProject || filterStatus || filterDate) && (
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  setFilterUser('');
+                  setFilterProject('');
+                  setFilterStatus('');
+                  setFilterDate('');
+                }}
+                className="btn-secondary text-sm"
+              >
+                Limpar Filtros
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
           <div className="text-secondary-600 mt-2">Carregando...</div>
         </div>
-      ) : groupedEntries.length === 0 ? (
+      ) : filteredAndGroupedEntries.length === 0 ? (
         <div className="text-center py-8 card">
           <div className="text-secondary-500">Nenhum registro encontrado</div>
         </div>
       ) : (
         <div className="space-y-6">
-          {groupedEntries.map(({ date, entries: dayEntries }) => (
+          {filteredAndGroupedEntries.map(({ date, entries: dayEntries }) => (
             <div key={date} className="space-y-2">
               <div className="flex items-center justify-between bg-primary-50 px-4 py-3 rounded-t-lg border-b border-primary-200">
                 <h2 className="text-lg font-semibold text-primary-800">
@@ -282,16 +440,22 @@ export const TimesheetEntries = () => {
         title={editingEntry ? 'Editar Lançamento' : 'Novo Lançamento'}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Select
-            label="Usuário"
-            required
-            register={register('userId')}
-            error={errors.userId?.message}
-            options={[
-              { value: '', label: 'Selecione um usuário' },
-              ...users.map((user) => ({ value: user.id, label: user.name })),
-            ]}
-          />
+          {isConsultant ? (
+            <input type="hidden" {...register('userId')} value={currentUser?.id || ''} />
+          ) : (
+            <SelectSearchable
+              label="Usuário"
+              required
+              value={watchedUserId || ''}
+              onChange={(value) => setValue('userId', value, { shouldValidate: true })}
+              error={errors.userId?.message}
+              options={[
+                { value: '', label: 'Selecione um usuário' },
+                ...users.map((user) => ({ value: user.id, label: user.name })),
+              ]}
+              placeholder="Selecione um usuário"
+            />
+          )}
           <Select
             label="Projeto"
             required
@@ -330,15 +494,17 @@ export const TimesheetEntries = () => {
             register={register('notes')}
             error={errors.notes?.message}
           />
-          <Select
-            label="Status"
-            register={register('status')}
-            error={errors.status?.message}
-            options={Object.values(TimesheetStatus).map((status) => ({
-              value: status,
-              label: status,
-            }))}
-          />
+          {!isConsultant && (
+            <Select
+              label="Status"
+              register={register('status')}
+              error={errors.status?.message}
+              options={Object.values(TimesheetStatus).map((status) => ({
+                value: status,
+                label: statusTexts[status],
+              }))}
+            />
+          )}
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"
