@@ -9,6 +9,7 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   onEdit?: (item: T) => void;
   onDelete?: (item: T) => void;
+  onDuplicate?: (item: T) => void;
   loading?: boolean;
 }
 
@@ -17,6 +18,7 @@ export function DataTable<T extends { id: string }>({
   columns,
   onEdit,
   onDelete,
+  onDuplicate,
   loading = false,
 }: DataTableProps<T>) {
   if (loading) {
@@ -49,7 +51,7 @@ export function DataTable<T extends { id: string }>({
                 {column.label}
               </th>
             ))}
-            {(onEdit || onDelete) && (
+            {(onEdit || onDelete || onDuplicate) && (
               <th className="px-6 py-3 text-left text-xs font-semibold text-secondary-700 uppercase tracking-wider">
                 Ações
               </th>
@@ -66,7 +68,7 @@ export function DataTable<T extends { id: string }>({
                     : String(item[column.key as keyof T] ?? '')}
                 </td>
               ))}
-              {(onEdit || onDelete) && (
+              {(onEdit || onDelete || onDuplicate) && (
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <div className="flex space-x-3">
                     {onEdit && (
@@ -87,6 +89,28 @@ export function DataTable<T extends { id: string }>({
                             strokeLinecap="round"
                             strokeLinejoin="round"
                             d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                    {onDuplicate && (
+                      <button
+                        onClick={() => onDuplicate(item)}
+                        className="text-warning-600 hover:text-warning-800 transition-colors p-1 rounded hover:bg-warning-50"
+                        title="Duplicar"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-5 w-5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
                           />
                         </svg>
                       </button>

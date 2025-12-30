@@ -133,6 +133,68 @@ export const TimesheetEntries = () => {
     }
   };
 
+  const handleDuplicate = (entry: TimesheetEntry) => {
+    setEditingEntry(null);
+    reset({
+      userId: entry.userId,
+      projectId: entry.projectId,
+      date: new Date(entry.date).toISOString().split('T')[0],
+      hours: entry.hours.toString(),
+      activityType: entry.activityType,
+      notes: entry.notes || '',
+      status: TimesheetStatus.PENDING, // Duplicado sempre começa como PENDING
+    });
+    setIsModalOpen(true);
+  };
+
+  // Agrupa lançamentos por data
+  const groupEntriesByDate = () => {
+    const grouped: { [key: string]: TimesheetEntry[] } = {};
+    
+    entries.forEach((entry) => {
+      const dateKey = new Date(entry.date).toISOString().split('T')[0];
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(entry);
+    });
+
+    // Ordena as datas (mais recente primeiro)
+    return Object.keys(grouped)
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+      .map((date) => ({
+        date,
+        entries: grouped[date].sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ),
+      }));
+  };
+
+  const formatDateHeader = (dateString: string) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const isToday = date.toDateString() === today.toDateString();
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    const dayName = date.toLocaleDateString('pt-BR', { weekday: 'long' });
+    const formattedDate = date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    if (isToday) {
+      return `Hoje - ${formattedDate}`;
+    } else if (isYesterday) {
+      return `Ontem - ${formattedDate}`;
+    } else {
+      return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} - ${formattedDate}`;
+    }
+  };
+
   const columns = [
     {
       key: 'user',
@@ -143,11 +205,6 @@ export const TimesheetEntries = () => {
       key: 'project',
       label: 'Projeto',
       render: (entry: TimesheetEntry) => entry.project?.name || '-',
-    },
-    {
-      key: 'date',
-      label: 'Data',
-      render: (entry: TimesheetEntry) => new Date(entry.date).toLocaleDateString('pt-BR'),
     },
     {
       key: 'hours',
@@ -161,7 +218,6 @@ export const TimesheetEntries = () => {
       key: 'status',
       label: 'Status',
       render: (entry: TimesheetEntry) => {
-
         return (
           <span className={`inline-flex items-center rounded-md ${statusColors[entry.status]} px-2 py-1 text-xs font-medium inset-ring`}>
             {statusTexts[entry.status]}
@@ -170,6 +226,8 @@ export const TimesheetEntries = () => {
       },
     },
   ];
+
+  const groupedEntries = groupEntriesByDate();
 
   return (
     <div>
@@ -183,13 +241,40 @@ export const TimesheetEntries = () => {
         </button>
       </div>
 
-      <DataTable
-        data={entries}
-        columns={columns}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        loading={loading}
-      />
+      {loading ? (
+        <div className="text-center py-8">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+          <div className="text-secondary-600 mt-2">Carregando...</div>
+        </div>
+      ) : groupedEntries.length === 0 ? (
+        <div className="text-center py-8 card">
+          <div className="text-secondary-500">Nenhum registro encontrado</div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groupedEntries.map(({ date, entries: dayEntries }) => (
+            <div key={date} className="space-y-2">
+              <div className="flex items-center justify-between bg-primary-50 px-4 py-3 rounded-t-lg border-b border-primary-200">
+                <h2 className="text-lg font-semibold text-primary-800">
+                  {formatDateHeader(date)}
+                </h2>
+                <span className="text-sm text-primary-600 font-medium">
+                  {dayEntries.length} {dayEntries.length === 1 ? 'lançamento' : 'lançamentos'} •{' '}
+                  {dayEntries.reduce((sum, e) => sum + e.hours, 0).toFixed(1)}h total
+                </span>
+              </div>
+              <DataTable
+                data={dayEntries}
+                columns={columns}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onDuplicate={handleDuplicate}
+                loading={false}
+              />
+            </div>
+          ))}
+        </div>
+      )}
 
       <Modal
         isOpen={isModalOpen}
