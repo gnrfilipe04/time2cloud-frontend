@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -6,7 +6,9 @@ import { api } from '../config/api';
 import { Project, Client, Company, User } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
-import { Input, Select } from '../components/Input';
+import { Input } from '../components/Input';
+import { SelectSearchable } from '../components/SelectSearchable';
+import { useFilters } from '../hooks/useFilters';
 
 const projectSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -34,9 +36,19 @@ export const Projects = () => {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
+  });
+
+  // Filtros persistentes
+  const [filters, setFilters] = useFilters('projects', {
+    filterClient: '',
+    filterCompany: '',
+    filterManager: '',
+    filterStatus: '',
   });
 
   useEffect(() => {
@@ -130,6 +142,26 @@ export const Projects = () => {
     }
   };
 
+  // Filtra projetos
+  const filteredProjects = useMemo(() => {
+    let filtered = projects;
+
+    if (filters.filterClient) {
+      filtered = filtered.filter((p) => p.clientId === filters.filterClient);
+    }
+    if (filters.filterCompany) {
+      filtered = filtered.filter((p) => p.companyId === filters.filterCompany);
+    }
+    if (filters.filterManager) {
+      filtered = filtered.filter((p) => p.managerId === filters.filterManager);
+    }
+    if (filters.filterStatus) {
+      filtered = filtered.filter((p) => p.status === filters.filterStatus);
+    }
+
+    return filtered;
+  }, [projects, filters]);
+
   const columns = [
     { key: 'name', label: 'Nome' },
     {
@@ -163,8 +195,72 @@ export const Projects = () => {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <SelectSearchable
+            label="Cliente"
+            value={filters.filterClient}
+            onChange={(value) => setFilters({ ...filters, filterClient: value })}
+            options={[
+              { value: '', label: 'Todos os clientes' },
+              ...clients.map((client) => ({ value: client.id, label: client.name })),
+            ]}
+            placeholder="Todos os clientes"
+          />
+          <SelectSearchable
+            label="Empresa"
+            value={filters.filterCompany}
+            onChange={(value) => setFilters({ ...filters, filterCompany: value })}
+            options={[
+              { value: '', label: 'Todas as empresas' },
+              ...companies.map((company) => ({ value: company.id, label: company.name })),
+            ]}
+            placeholder="Todas as empresas"
+          />
+          <SelectSearchable
+            label="Gerente"
+            value={filters.filterManager}
+            onChange={(value) => setFilters({ ...filters, filterManager: value })}
+            options={[
+              { value: '', label: 'Todos os gerentes' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+            placeholder="Todos os gerentes"
+          />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
+            <input
+              type="text"
+              className="input-base"
+              value={filters.filterStatus}
+              onChange={(e) => setFilters({ ...filters, filterStatus: e.target.value })}
+              placeholder="Filtrar por status"
+            />
+          </div>
+        </div>
+        {(filters.filterClient || filters.filterCompany || filters.filterManager || filters.filterStatus) && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilters({
+                  filterClient: '',
+                  filterCompany: '',
+                  filterManager: '',
+                  filterStatus: '',
+                });
+              }}
+              className="btn-secondary text-sm"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={projects}
+        data={filteredProjects}
         columns={columns}
         onEdit={handleEdit}
         onDelete={handleDelete}
@@ -184,33 +280,39 @@ export const Projects = () => {
             register={register('name')}
             error={errors.name?.message}
           />
-          <Select
+          <SelectSearchable
             label="Cliente"
             required
-            register={register('clientId')}
+            value={watch('clientId') || ''}
+            onChange={(value) => setValue('clientId', value, { shouldValidate: true })}
             error={errors.clientId?.message}
             options={[
               { value: '', label: 'Selecione um cliente' },
               ...clients.map((client) => ({ value: client.id, label: client.name })),
             ]}
+            placeholder="Selecione um cliente"
           />
-          <Select
+          <SelectSearchable
             label="Empresa"
-            register={register('companyId')}
+            value={watch('companyId') || ''}
+            onChange={(value) => setValue('companyId', value, { shouldValidate: true })}
             error={errors.companyId?.message}
             options={[
               { value: '', label: 'Nenhuma' },
               ...companies.map((company) => ({ value: company.id, label: company.name })),
             ]}
+            placeholder="Nenhuma"
           />
-          <Select
+          <SelectSearchable
             label="Gerente"
-            register={register('managerId')}
+            value={watch('managerId') || ''}
+            onChange={(value) => setValue('managerId', value, { shouldValidate: true })}
             error={errors.managerId?.message}
             options={[
               { value: '', label: 'Nenhum' },
               ...users.map((user) => ({ value: user.id, label: user.name })),
             ]}
+            placeholder="Nenhum"
           />
           <Input
             type="date"

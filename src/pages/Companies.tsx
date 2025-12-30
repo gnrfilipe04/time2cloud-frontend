@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { Company } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Textarea } from '../components/Input';
+import { useFilters } from '../hooks/useFilters';
 
 const companySchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -21,6 +22,11 @@ export const Companies = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+
+  // Filtros persistentes
+  const [filters, setFilters] = useFilters('companies', {
+    filterSearch: '',
+  });
 
   const {
     register,
@@ -91,6 +97,19 @@ export const Companies = () => {
     }
   };
 
+  // Filtra empresas
+  const filteredCompanies = useMemo(() => {
+    if (!filters.filterSearch) return companies;
+    
+    const searchLower = filters.filterSearch.toLowerCase();
+    return companies.filter(
+      (c) =>
+        c.name.toLowerCase().includes(searchLower) ||
+        (c.cnpj && c.cnpj.toLowerCase().includes(searchLower)) ||
+        (c.bankInfo && c.bankInfo.toLowerCase().includes(searchLower))
+    );
+  }, [companies, filters.filterSearch]);
+
   const columns = [
     { key: 'name', label: 'Nome' },
     { key: 'cnpj', label: 'CNPJ' },
@@ -109,8 +128,37 @@ export const Companies = () => {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Buscar</label>
+            <input
+              type="text"
+              className="input-base"
+              value={filters.filterSearch}
+              onChange={(e) => setFilters({ ...filters, filterSearch: e.target.value })}
+              placeholder="Nome, CNPJ ou informações bancárias..."
+            />
+          </div>
+        </div>
+        {filters.filterSearch && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilters({ filterSearch: '' });
+              }}
+              className="btn-secondary text-sm"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={companies}
+        data={filteredCompanies}
         columns={columns}
         onEdit={handleEdit}
         onDelete={handleDelete}

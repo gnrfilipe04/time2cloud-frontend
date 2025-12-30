@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -6,7 +6,9 @@ import { api } from '../config/api';
 import { ProjectAssignment, User, Project, FunctionRole } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
-import { Input, Select, Checkbox } from '../components/Input';
+import { Input, Checkbox } from '../components/Input';
+import { SelectSearchable } from '../components/SelectSearchable';
+import { useFilters } from '../hooks/useFilters';
 
 const projectAssignmentSchema = z.object({
   userId: z.string().min(1, 'Usuário é obrigatório'),
@@ -35,12 +37,22 @@ export const ProjectAssignments = () => {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<ProjectAssignmentFormData>({
     resolver: zodResolver(projectAssignmentSchema),
     defaultValues: {
       isActive: true,
     },
+  });
+
+  // Filtros persistentes
+  const [filters, setFilters] = useFilters('projectAssignments', {
+    filterUser: '',
+    filterProject: '',
+    filterFunctionRole: '',
+    filterActive: '',
   });
 
   useEffect(() => {
@@ -127,6 +139,27 @@ export const ProjectAssignments = () => {
     }
   };
 
+  // Filtra atribuições
+  const filteredAssignments = useMemo(() => {
+    let filtered = assignments;
+
+    if (filters.filterUser) {
+      filtered = filtered.filter((a) => a.userId === filters.filterUser);
+    }
+    if (filters.filterProject) {
+      filtered = filtered.filter((a) => a.projectId === filters.filterProject);
+    }
+    if (filters.filterFunctionRole) {
+      filtered = filtered.filter((a) => a.functionRoleId === filters.filterFunctionRole);
+    }
+    if (filters.filterActive !== '') {
+      const isActive = filters.filterActive === 'true';
+      filtered = filtered.filter((a) => a.isActive === isActive);
+    }
+
+    return filtered;
+  }, [assignments, filters]);
+
   const columns = [
     {
       key: 'user',
@@ -166,8 +199,74 @@ export const ProjectAssignments = () => {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <SelectSearchable
+            label="Usuário"
+            value={filters.filterUser}
+            onChange={(value) => setFilters({ ...filters, filterUser: value })}
+            options={[
+              { value: '', label: 'Todos os usuários' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+            placeholder="Todos os usuários"
+          />
+          <SelectSearchable
+            label="Projeto"
+            value={filters.filterProject}
+            onChange={(value) => setFilters({ ...filters, filterProject: value })}
+            options={[
+              { value: '', label: 'Todos os projetos' },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+            placeholder="Todos os projetos"
+          />
+          <SelectSearchable
+            label="Função"
+            value={filters.filterFunctionRole}
+            onChange={(value) => setFilters({ ...filters, filterFunctionRole: value })}
+            options={[
+              { value: '', label: 'Todas as funções' },
+              ...functionRoles.map((role) => ({ value: role.id, label: role.name })),
+            ]}
+            placeholder="Todas as funções"
+          />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
+            <select
+              className="input-base"
+              value={filters.filterActive}
+              onChange={(e) => setFilters({ ...filters, filterActive: e.target.value })}
+            >
+              <option value="">Todos</option>
+              <option value="true">Ativo</option>
+              <option value="false">Inativo</option>
+            </select>
+          </div>
+        </div>
+        {(filters.filterUser || filters.filterProject || filters.filterFunctionRole || filters.filterActive) && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilters({
+                  filterUser: '',
+                  filterProject: '',
+                  filterFunctionRole: '',
+                  filterActive: '',
+                });
+              }}
+              className="btn-secondary text-sm"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={assignments}
+        data={filteredAssignments}
         columns={columns}
         onEdit={handleEdit}
         onDelete={handleDelete}
@@ -180,34 +279,40 @@ export const ProjectAssignments = () => {
         title={editingAssignment ? 'Editar Atribuição' : 'Nova Atribuição'}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Select
+          <SelectSearchable
             label="Usuário"
             required
-            register={register('userId')}
+            value={watch('userId') || ''}
+            onChange={(value) => setValue('userId', value, { shouldValidate: true })}
             error={errors.userId?.message}
             options={[
               { value: '', label: 'Selecione um usuário' },
               ...users.map((user) => ({ value: user.id, label: user.name })),
             ]}
+            placeholder="Selecione um usuário"
           />
-          <Select
+          <SelectSearchable
             label="Projeto"
             required
-            register={register('projectId')}
+            value={watch('projectId') || ''}
+            onChange={(value) => setValue('projectId', value, { shouldValidate: true })}
             error={errors.projectId?.message}
             options={[
               { value: '', label: 'Selecione um projeto' },
               ...projects.map((project) => ({ value: project.id, label: project.name })),
             ]}
+            placeholder="Selecione um projeto"
           />
-          <Select
+          <SelectSearchable
             label="Função"
-            register={register('functionRoleId')}
+            value={watch('functionRoleId') || ''}
+            onChange={(value) => setValue('functionRoleId', value, { shouldValidate: true })}
             error={errors.functionRoleId?.message}
             options={[
               { value: '', label: 'Nenhuma' },
               ...functionRoles.map((role) => ({ value: role.id, label: role.name })),
             ]}
+            placeholder="Nenhuma"
           />
           <Input
             type="number"

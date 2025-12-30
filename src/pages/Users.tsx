@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { User, UserRole } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Select, Checkbox } from '../components/Input';
+import { useFilters } from '../hooks/useFilters';
 
 const userSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -24,6 +25,13 @@ export const Users = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+
+  // Filtros persistentes
+  const [filters, setFilters] = useFilters('users', {
+    filterRole: '',
+    filterActive: '',
+    filterSearch: '',
+  });
 
   const {
     register,
@@ -116,6 +124,30 @@ export const Users = () => {
     }
   };
 
+  // Filtra usuários
+  const filteredUsers = useMemo(() => {
+    let filtered = users;
+
+    if (filters.filterRole) {
+      filtered = filtered.filter((u) => u.role === filters.filterRole);
+    }
+    if (filters.filterActive !== '') {
+      const isActive = filters.filterActive === 'true';
+      filtered = filtered.filter((u) => u.isActive === isActive);
+    }
+    if (filters.filterSearch) {
+      const searchLower = filters.filterSearch.toLowerCase();
+      filtered = filtered.filter(
+        (u) =>
+          u.name.toLowerCase().includes(searchLower) ||
+          u.email.toLowerCase().includes(searchLower) ||
+          (u.contractType && u.contractType.toLowerCase().includes(searchLower))
+      );
+    }
+
+    return filtered;
+  }, [users, filters]);
+
   const columns = [
     { key: 'name', label: 'Nome' },
     { key: 'email', label: 'Email' },
@@ -140,8 +172,68 @@ export const Users = () => {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Função</label>
+            <select
+              className="input-base"
+              value={filters.filterRole}
+              onChange={(e) => setFilters({ ...filters, filterRole: e.target.value })}
+            >
+              <option value="">Todas as funções</option>
+              {Object.values(UserRole).map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
+            <select
+              className="input-base"
+              value={filters.filterActive}
+              onChange={(e) => setFilters({ ...filters, filterActive: e.target.value })}
+            >
+              <option value="">Todos</option>
+              <option value="true">Ativo</option>
+              <option value="false">Inativo</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Buscar</label>
+            <input
+              type="text"
+              className="input-base"
+              value={filters.filterSearch}
+              onChange={(e) => setFilters({ ...filters, filterSearch: e.target.value })}
+              placeholder="Nome, email ou tipo de contrato..."
+            />
+          </div>
+        </div>
+        {(filters.filterRole || filters.filterActive || filters.filterSearch) && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilters({
+                  filterRole: '',
+                  filterActive: '',
+                  filterSearch: '',
+                });
+              }}
+              className="btn-secondary text-sm"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={users}
+        data={filteredUsers}
         columns={columns}
         onEdit={handleEdit}
         onDelete={handleDelete}

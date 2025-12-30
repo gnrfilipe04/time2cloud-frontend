@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,7 +7,9 @@ import { Invoice, User, InvoiceStatus } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Select } from '../components/Input';
+import { SelectSearchable } from '../components/SelectSearchable';
 import { statusColors, statusTexts } from '../constants';
+import { useFilters } from '../hooks/useFilters';
 
 const invoiceSchema = z.object({
   userId: z.string().min(1, 'Usuário é obrigatório'),
@@ -35,12 +37,22 @@ export const Invoices = () => {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
       status: InvoiceStatus.PENDING,
     },
+  });
+
+  // Filtros persistentes
+  const [filters, setFilters] = useFilters('invoices', {
+    filterUser: '',
+    filterStatus: '',
+    filterPeriodStart: '',
+    filterPeriodEnd: '',
   });
 
   useEffect(() => {
@@ -129,6 +141,28 @@ export const Invoices = () => {
     }
   };
 
+  // Filtra faturas
+  const filteredInvoices = useMemo(() => {
+    let filtered = invoices;
+
+    if (filters.filterUser) {
+      filtered = filtered.filter((i) => i.userId === filters.filterUser);
+    }
+    if (filters.filterStatus) {
+      filtered = filtered.filter((i) => i.status === filters.filterStatus);
+    }
+    if (filters.filterPeriodStart) {
+      const filterDate = new Date(filters.filterPeriodStart);
+      filtered = filtered.filter((i) => new Date(i.periodStart) >= filterDate);
+    }
+    if (filters.filterPeriodEnd) {
+      const filterDate = new Date(filters.filterPeriodEnd);
+      filtered = filtered.filter((i) => new Date(i.periodEnd) <= filterDate);
+    }
+
+    return filtered;
+  }, [invoices, filters]);
+
   const columns = [
     {
       key: 'user',
@@ -175,8 +209,75 @@ export const Invoices = () => {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <SelectSearchable
+            label="Usuário"
+            value={filters.filterUser}
+            onChange={(value) => setFilters({ ...filters, filterUser: value })}
+            options={[
+              { value: '', label: 'Todos os usuários' },
+              ...users.map((user) => ({ value: user.id, label: user.name })),
+            ]}
+            placeholder="Todos os usuários"
+          />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
+            <select
+              className="input-base"
+              value={filters.filterStatus}
+              onChange={(e) => setFilters({ ...filters, filterStatus: e.target.value })}
+            >
+              <option value="">Todos os status</option>
+              {Object.values(InvoiceStatus).map((status) => (
+                <option key={status} value={status}>
+                  {statusTexts[status]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Período Início</label>
+            <input
+              type="date"
+              className="input-base"
+              value={filters.filterPeriodStart}
+              onChange={(e) => setFilters({ ...filters, filterPeriodStart: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Período Fim</label>
+            <input
+              type="date"
+              className="input-base"
+              value={filters.filterPeriodEnd}
+              onChange={(e) => setFilters({ ...filters, filterPeriodEnd: e.target.value })}
+            />
+          </div>
+        </div>
+        {(filters.filterUser || filters.filterStatus || filters.filterPeriodStart || filters.filterPeriodEnd) && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilters({
+                  filterUser: '',
+                  filterStatus: '',
+                  filterPeriodStart: '',
+                  filterPeriodEnd: '',
+                });
+              }}
+              className="btn-secondary text-sm"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={invoices}
+        data={filteredInvoices}
         columns={columns}
         onEdit={handleEdit}
         onDelete={handleDelete}
@@ -189,15 +290,17 @@ export const Invoices = () => {
         title={editingInvoice ? 'Editar Fatura' : 'Nova Fatura'}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <Select
+          <SelectSearchable
             label="Usuário"
             required
-            register={register('userId')}
+            value={watch('userId') || ''}
+            onChange={(value) => setValue('userId', value, { shouldValidate: true })}
             error={errors.userId?.message}
             options={[
               { value: '', label: 'Selecione um usuário' },
               ...users.map((user) => ({ value: user.id, label: user.name })),
             ]}
+            placeholder="Selecione um usuário"
           />
           <Input
             type="date"

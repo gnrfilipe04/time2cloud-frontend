@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { FunctionRole } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Textarea } from '../components/Input';
+import { useFilters } from '../hooks/useFilters';
 
 const functionRoleSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
@@ -20,6 +21,11 @@ export const FunctionRoles = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<FunctionRole | null>(null);
+
+  // Filtros persistentes
+  const [filters, setFilters] = useFilters('functionRoles', {
+    filterSearch: '',
+  });
 
   const {
     register,
@@ -89,6 +95,18 @@ export const FunctionRoles = () => {
     }
   };
 
+  // Filtra funções
+  const filteredFunctionRoles = useMemo(() => {
+    if (!filters.filterSearch) return functionRoles;
+    
+    const searchLower = filters.filterSearch.toLowerCase();
+    return functionRoles.filter(
+      (r) =>
+        r.name.toLowerCase().includes(searchLower) ||
+        (r.description && r.description.toLowerCase().includes(searchLower))
+    );
+  }, [functionRoles, filters.filterSearch]);
+
   const columns = [
     { key: 'name', label: 'Nome' },
     { key: 'description', label: 'Descrição' },
@@ -106,8 +124,37 @@ export const FunctionRoles = () => {
         </button>
       </div>
 
+      {/* Filtros */}
+      <div className="card mb-6">
+        <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Buscar</label>
+            <input
+              type="text"
+              className="input-base"
+              value={filters.filterSearch}
+              onChange={(e) => setFilters({ ...filters, filterSearch: e.target.value })}
+              placeholder="Nome ou descrição..."
+            />
+          </div>
+        </div>
+        {filters.filterSearch && (
+          <div className="mt-4">
+            <button
+              onClick={() => {
+                setFilters({ filterSearch: '' });
+              }}
+              className="btn-secondary text-sm"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       <DataTable
-        data={functionRoles}
+        data={filteredFunctionRoles}
         columns={columns}
         onEdit={handleEdit}
         onDelete={handleDelete}

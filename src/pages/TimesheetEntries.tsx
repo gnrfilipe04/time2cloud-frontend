@@ -10,6 +10,7 @@ import { Input, Select, Textarea } from '../components/Input';
 import { SelectSearchable } from '../components/SelectSearchable';
 import { statusColors, statusTexts } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
+import { useFilters } from '../hooks/useFilters';
 
 const baseTimesheetEntrySchema = {
   userId: z.string().min(1, 'Usuário é obrigatório'),
@@ -39,11 +40,13 @@ export const TimesheetEntries = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimesheetEntry | null>(null);
   
-  // Filtros para ADMIN
-  const [filterUser, setFilterUser] = useState<string>('');
-  const [filterProject, setFilterProject] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<string>('');
-  const [filterDate, setFilterDate] = useState<string>('');
+  // Filtros persistentes para ADMIN
+  const [filters, setFilters] = useFilters('timesheetEntries', {
+    filterUser: '',
+    filterProject: '',
+    filterStatus: '',
+    filterDate: '',
+  });
 
   const isConsultant = currentUser?.role === UserRole.CONSULTANT;
   const isAdmin = currentUser?.role === UserRole.ADMIN;
@@ -204,17 +207,17 @@ export const TimesheetEntries = () => {
     let filtered = entries;
 
     if (isAdmin) {
-      if (filterUser) {
-        filtered = filtered.filter((e) => e.userId === filterUser);
+      if (filters.filterUser) {
+        filtered = filtered.filter((e) => e.userId === filters.filterUser);
       }
-      if (filterProject) {
-        filtered = filtered.filter((e) => e.projectId === filterProject);
+      if (filters.filterProject) {
+        filtered = filtered.filter((e) => e.projectId === filters.filterProject);
       }
-      if (filterStatus) {
-        filtered = filtered.filter((e) => e.status === filterStatus);
+      if (filters.filterStatus) {
+        filtered = filtered.filter((e) => e.status === filters.filterStatus);
       }
-      if (filterDate) {
-        const filterDateKey = new Date(filterDate).toISOString().split('T')[0];
+      if (filters.filterDate) {
+        const filterDateKey = new Date(filters.filterDate).toISOString().split('T')[0];
         filtered = filtered.filter((e) => {
           const entryDateKey = new Date(e.date).toISOString().split('T')[0];
           return entryDateKey === filterDateKey;
@@ -245,7 +248,7 @@ export const TimesheetEntries = () => {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         ),
       }));
-  }, [entries, filterUser, filterProject, filterStatus, filterDate, isAdmin, isConsultant, currentUser?.id]);
+      }, [entries, filters, isAdmin, isConsultant, currentUser?.id]);
 
   const formatDateHeader = (dateString: string) => {
     const date = new Date(dateString);
@@ -338,8 +341,8 @@ export const TimesheetEntries = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <SelectSearchable
               label="Usuário"
-              value={filterUser}
-              onChange={setFilterUser}
+              value={filters.filterUser}
+              onChange={(value) => setFilters({ ...filters, filterUser: value })}
               options={[
                 { value: '', label: 'Todos os usuários' },
                 ...users.map((user) => ({ value: user.id, label: user.name })),
@@ -348,8 +351,8 @@ export const TimesheetEntries = () => {
             />
             <SelectSearchable
               label="Projeto"
-              value={filterProject}
-              onChange={setFilterProject}
+              value={filters.filterProject}
+              onChange={(value) => setFilters({ ...filters, filterProject: value })}
               options={[
                 { value: '', label: 'Todos os projetos' },
                 ...projects.map((project) => ({ value: project.id, label: project.name })),
@@ -360,8 +363,8 @@ export const TimesheetEntries = () => {
               <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
               <select
                 className="input-base"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                value={filters.filterStatus}
+                onChange={(e) => setFilters({ ...filters, filterStatus: e.target.value })}
               >
                 <option value="">Todos os status</option>
                 {Object.values(TimesheetStatus).map((status) => (
@@ -376,19 +379,21 @@ export const TimesheetEntries = () => {
               <input
                 type="date"
                 className="input-base"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
+                value={filters.filterDate}
+                onChange={(e) => setFilters({ ...filters, filterDate: e.target.value })}
               />
             </div>
           </div>
-          {(filterUser || filterProject || filterStatus || filterDate) && (
+          {(filters.filterUser || filters.filterProject || filters.filterStatus || filters.filterDate) && (
             <div className="mt-4">
               <button
                 onClick={() => {
-                  setFilterUser('');
-                  setFilterProject('');
-                  setFilterStatus('');
-                  setFilterDate('');
+                  setFilters({
+                    filterUser: '',
+                    filterProject: '',
+                    filterStatus: '',
+                    filterDate: '',
+                  });
                 }}
                 className="btn-secondary text-sm"
               >
@@ -456,15 +461,17 @@ export const TimesheetEntries = () => {
               placeholder="Selecione um usuário"
             />
           )}
-          <Select
+          <SelectSearchable
             label="Projeto"
             required
-            register={register('projectId')}
+            value={watch('projectId') || ''}
+            onChange={(value) => setValue('projectId', value, { shouldValidate: true })}
             error={errors.projectId?.message}
             options={[
               { value: '', label: 'Selecione um projeto' },
               ...projects.map((project) => ({ value: project.id, label: project.name })),
             ]}
+            placeholder="Selecione um projeto"
           />
           <Input
             type="date"
