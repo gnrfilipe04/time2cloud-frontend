@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { getAccessibleRoutes } from '../utils/permissions';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,17 +16,8 @@ export const Layout = ({ children }: LayoutProps) => {
     navigate('/login');
   };
 
-  const navItems = [
-    { path: '/dashboard', label: 'Dashboard' },
-    { path: '/users', label: 'Usuários' },
-    { path: '/clients', label: 'Clientes' },
-    { path: '/companies', label: 'Empresas' },
-    { path: '/projects', label: 'Projetos' },
-    { path: '/project-assignments', label: 'Atribuições' },
-    { path: '/timesheet-entries', label: 'Lançamentos' },
-    { path: '/invoices', label: 'Faturas' },
-    { path: '/function-roles', label: 'Funções' },
-  ];
+  // Filtra os itens de navegação baseado na role do usuário
+  const navItems = user ? getAccessibleRoutes(user.role) : [];
 
   return (
     <div className="min-h-screen bg-secondary-50">

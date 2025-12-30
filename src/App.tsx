@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { RoleProtectedRoute } from './components/RoleProtectedRoute';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
@@ -12,6 +13,7 @@ import { ProjectAssignments } from './pages/ProjectAssignments';
 import { TimesheetEntries } from './pages/TimesheetEntries';
 import { Invoices } from './pages/Invoices';
 import { FunctionRoles } from './pages/FunctionRoles';
+import { getAllowedRolesForPath } from './utils/permissions';
 
 function App() {
   return (
@@ -33,9 +35,11 @@ function App() {
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Dashboard />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/dashboard')}>
+                  <Layout>
+                    <Dashboard />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -43,9 +47,11 @@ function App() {
             path="/users"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Users />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/users')}>
+                  <Layout>
+                    <Users />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -53,9 +59,11 @@ function App() {
             path="/clients"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Clients />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/clients')}>
+                  <Layout>
+                    <Clients />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -63,9 +71,11 @@ function App() {
             path="/companies"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Companies />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/companies')}>
+                  <Layout>
+                    <Companies />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -73,9 +83,11 @@ function App() {
             path="/projects"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Projects />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/projects')}>
+                  <Layout>
+                    <Projects />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -83,9 +95,11 @@ function App() {
             path="/project-assignments"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <ProjectAssignments />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/project-assignments')}>
+                  <Layout>
+                    <ProjectAssignments />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -93,9 +107,11 @@ function App() {
             path="/timesheet-entries"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <TimesheetEntries />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/timesheet-entries')}>
+                  <Layout>
+                    <TimesheetEntries />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -103,9 +119,11 @@ function App() {
             path="/invoices"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Invoices />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/invoices')}>
+                  <Layout>
+                    <Invoices />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />
@@ -113,9 +131,11 @@ function App() {
             path="/function-roles"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <FunctionRoles />
-                </Layout>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/function-roles')}>
+                  <Layout>
+                    <FunctionRoles />
+                  </Layout>
+                </RoleProtectedRoute>
               </ProtectedRoute>
             }
           />

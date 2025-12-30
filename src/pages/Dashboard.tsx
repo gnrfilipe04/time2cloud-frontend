@@ -1,31 +1,90 @@
 import { useEffect, useState } from 'react';
 import { api } from '../config/api';
+import { useAuth } from '../contexts/AuthContext';
+import { UserRole } from '../types';
 
 export const Dashboard = () => {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     users: 0,
     clients: 0,
     projects: 0,
     timesheetEntries: 0,
+    invoices: 0,
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [usersRes, clientsRes, projectsRes, timesheetsRes] = await Promise.all([
-          api.get('/users'),
-          api.get('/clients'),
-          api.get('/projects'),
-          api.get('/timesheet-entries'),
-        ]);
+        const requests: Promise<any>[] = [];
+        const statsData: any = {};
 
-        setStats({
-          users: usersRes.data.length,
-          clients: clientsRes.data.length,
-          projects: projectsRes.data.length,
-          timesheetEntries: timesheetsRes.data.length,
-        });
+        // Apenas ADMIN pode ver usuários
+        if (user?.role === UserRole.ADMIN) {
+          requests.push(
+            api.get('/users').then((res) => {
+              statsData.users = res.data.length;
+            }).catch(() => {
+              statsData.users = 0;
+            })
+          );
+        }
+
+        // ADMIN e PROJECT_MANAGER podem ver clientes
+        if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER) {
+          requests.push(
+            api.get('/clients').then((res) => {
+              statsData.clients = res.data.length;
+            }).catch(() => {
+              statsData.clients = 0;
+            })
+          );
+        }
+
+        // ADMIN e PROJECT_MANAGER podem ver projetos
+        if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER) {
+          requests.push(
+            api.get('/projects').then((res) => {
+              statsData.projects = res.data.length;
+            }).catch(() => {
+              statsData.projects = 0;
+            })
+          );
+        }
+
+        // ADMIN, PROJECT_MANAGER e CONSULTANT podem ver lançamentos
+        if (
+          user?.role === UserRole.ADMIN ||
+          user?.role === UserRole.PROJECT_MANAGER ||
+          user?.role === UserRole.CONSULTANT
+        ) {
+          requests.push(
+            api.get('/timesheet-entries').then((res) => {
+              statsData.timesheetEntries = res.data.length;
+            }).catch(() => {
+              statsData.timesheetEntries = 0;
+            })
+          );
+        }
+
+        // ADMIN, FINANCE e CONSULTANT podem ver faturas
+        if (
+          user?.role === UserRole.ADMIN ||
+          user?.role === UserRole.FINANCE ||
+          user?.role === UserRole.CONSULTANT
+        ) {
+          requests.push(
+            api.get('/invoices').then((res) => {
+              statsData.invoices = res.data.length;
+            }).catch(() => {
+              statsData.invoices = 0;
+            })
+          );
+        }
+
+        await Promise.all(requests);
+        setStats((prev) => ({ ...prev, ...statsData }));
       } catch (error) {
         console.error('Erro ao carregar estatísticas:', error);
       } finally {
@@ -33,8 +92,10 @@ export const Dashboard = () => {
       }
     };
 
-    fetchStats();
-  }, []);
+    if (user) {
+      fetchStats();
+    }
+  }, [user]);
 
   if (loading) {
     return (
@@ -45,11 +106,12 @@ export const Dashboard = () => {
     );
   }
 
-  return (
-    <div>
-      <h1 className="text-3xl font-bold text-primary-700 mb-6">Dashboard</h1>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="card hover:shadow-lg transition-shadow">
+  const getVisibleCards = () => {
+    const cards = [];
+
+    if (user?.role === UserRole.ADMIN) {
+      cards.push(
+        <div key="users" className="card hover:shadow-lg transition-shadow">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-primary-100 p-3 rounded-lg">
               <div className="text-2xl">👥</div>
@@ -62,8 +124,12 @@ export const Dashboard = () => {
             </div>
           </div>
         </div>
+      );
+    }
 
-        <div className="card hover:shadow-lg transition-shadow">
+    if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER) {
+      cards.push(
+        <div key="clients" className="card hover:shadow-lg transition-shadow">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-success-100 p-3 rounded-lg">
               <div className="text-2xl">🏢</div>
@@ -76,8 +142,10 @@ export const Dashboard = () => {
             </div>
           </div>
         </div>
+      );
 
-        <div className="card hover:shadow-lg transition-shadow">
+      cards.push(
+        <div key="projects" className="card hover:shadow-lg transition-shadow">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-warning-100 p-3 rounded-lg">
               <div className="text-2xl">📁</div>
@@ -90,8 +158,16 @@ export const Dashboard = () => {
             </div>
           </div>
         </div>
+      );
+    }
 
-        <div className="card hover:shadow-lg transition-shadow">
+    if (
+      user?.role === UserRole.ADMIN ||
+      user?.role === UserRole.PROJECT_MANAGER ||
+      user?.role === UserRole.CONSULTANT
+    ) {
+      cards.push(
+        <div key="timesheets" className="card hover:shadow-lg transition-shadow">
           <div className="flex items-center">
             <div className="flex-shrink-0 bg-secondary-100 p-3 rounded-lg">
               <div className="text-2xl">⏰</div>
@@ -104,6 +180,39 @@ export const Dashboard = () => {
             </div>
           </div>
         </div>
+      );
+    }
+
+    if (
+      user?.role === UserRole.ADMIN ||
+      user?.role === UserRole.FINANCE ||
+      user?.role === UserRole.CONSULTANT
+    ) {
+      cards.push(
+        <div key="invoices" className="card hover:shadow-lg transition-shadow">
+          <div className="flex items-center">
+            <div className="flex-shrink-0 bg-primary-100 p-3 rounded-lg">
+              <div className="text-2xl">💰</div>
+            </div>
+            <div className="ml-5 w-0 flex-1">
+              <dl>
+                <dt className="text-sm font-medium text-secondary-600 truncate">Faturas</dt>
+                <dd className="text-2xl font-bold text-primary-600">{stats.invoices}</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return cards;
+  };
+
+  return (
+    <div>
+      <h1 className="text-3xl font-bold text-primary-700 mb-6">Dashboard</h1>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {getVisibleCards()}
       </div>
     </div>
   );

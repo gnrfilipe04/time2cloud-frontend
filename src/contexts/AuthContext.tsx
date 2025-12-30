@@ -17,15 +17,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      // Verificar se o token é válido fazendo uma requisição
-      // Por enquanto, apenas verificamos se existe
-      // Em produção, você pode fazer uma chamada para /auth/me ou similar
+    const loadUser = async () => {
+      const token = localStorage.getItem('accessToken');
+      const savedUser = localStorage.getItem('user');
+      
+      if (token && savedUser) {
+        try {
+          // Tenta carregar o usuário do localStorage
+          const user = JSON.parse(savedUser);
+          setUser(user);
+        } catch (error) {
+          console.error('Erro ao carregar usuário:', error);
+          localStorage.removeItem('user');
+        }
+      }
       setLoading(false);
-    } else {
-      setLoading(false);
-    }
+    };
+    
+    loadUser();
   }, []);
 
   const login = async (credentials: LoginRequest) => {
@@ -35,6 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       localStorage.setItem('accessToken', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
+      localStorage.setItem('user', JSON.stringify(user));
       setUser(user);
     } catch (error) {
       throw error;
@@ -44,6 +54,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
     setUser(null);
   };
 
