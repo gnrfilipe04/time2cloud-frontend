@@ -46,6 +46,7 @@ export const TimesheetEntries = () => {
     filterProject: '',
     filterStatus: '',
     filterDate: '',
+    filterMonth: '',
   });
 
   const isConsultant = currentUser?.role === UserRole.CONSULTANT;
@@ -223,9 +224,27 @@ export const TimesheetEntries = () => {
           return entryDateKey === filterDateKey;
         });
       }
+      if (filters.filterMonth) {
+        const [year, month] = filters.filterMonth.split('-');
+        filtered = filtered.filter((e) => {
+          const entryDate = new Date(e.date);
+          return entryDate.getFullYear() === parseInt(year) && 
+                 entryDate.getMonth() + 1 === parseInt(month);
+        });
+      }
     } else if (isConsultant) {
       // CONSULTANT só vê seus próprios lançamentos
       filtered = filtered.filter((e) => e.userId === currentUser?.id);
+      
+      // Aplica filtro de mês também para CONSULTANT
+      if (filters.filterMonth) {
+        const [year, month] = filters.filterMonth.split('-');
+        filtered = filtered.filter((e) => {
+          const entryDate = new Date(e.date);
+          return entryDate.getFullYear() === parseInt(year) && 
+                 entryDate.getMonth() + 1 === parseInt(month);
+        });
+      }
     }
 
     // Agrupa por data
@@ -249,6 +268,30 @@ export const TimesheetEntries = () => {
         ),
       }));
       }, [entries, filters, isAdmin, isConsultant, currentUser?.id]);
+
+  // Gera lista de meses disponíveis baseado nos dados
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    entries.forEach((entry) => {
+      const date = new Date(entry.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      monthSet.add(monthKey);
+    });
+    
+    return Array.from(monthSet)
+      .sort()
+      .reverse()
+      .map((monthKey) => {
+        const [year, month] = monthKey.split('-');
+        const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+        return {
+          key: monthKey,
+          label: date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+          month: parseInt(month),
+          year: parseInt(year),
+        };
+      });
+  }, [entries]);
 
   const formatDateHeader = (dateString: string) => {
     const date = new Date(dateString);
@@ -334,6 +377,41 @@ export const TimesheetEntries = () => {
         </button>
       </div>
 
+      {/* Timeline de Meses */}
+      {availableMonths.length > 0 && (
+        <div className="mb-6">
+          <div className="overflow-x-auto pb-2">
+            <div className="flex gap-3 min-w-max">
+              {availableMonths.map((month) => {
+                const isActive = filters.filterMonth === month.key;
+                return (
+                  <button
+                    key={month.key}
+                    onClick={() => {
+                      setFilters({
+                        ...filters,
+                        filterMonth: isActive ? '' : month.key,
+                        filterDate: '', // Limpa filtro de data quando seleciona mês
+                      });
+                    }}
+                    className={`
+                      px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap
+                      transition-colors duration-200
+                      ${isActive
+                        ? 'bg-primary-600 text-white shadow-md'
+                        : 'bg-white text-secondary-700 border border-secondary-200 hover:bg-primary-50 hover:border-primary-300'
+                      }
+                    `}
+                  >
+                    {month.label.charAt(0).toUpperCase() + month.label.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filtros para ADMIN */}
       {isAdmin && (
         <div className="card mb-6">
@@ -384,7 +462,7 @@ export const TimesheetEntries = () => {
               />
             </div>
           </div>
-          {(filters.filterUser || filters.filterProject || filters.filterStatus || filters.filterDate) && (
+          {(filters.filterUser || filters.filterProject || filters.filterStatus || filters.filterDate || filters.filterMonth) && (
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -393,6 +471,7 @@ export const TimesheetEntries = () => {
                     filterProject: '',
                     filterStatus: '',
                     filterDate: '',
+                    filterMonth: '',
                   });
                 }}
                 className="btn-secondary text-sm"
