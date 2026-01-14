@@ -91,6 +91,7 @@ export interface TimesheetEntry {
   activityType: string;
   notes?: string;
   status: TimesheetStatus;
+  statusDescription?: string;
   approverId?: string;
   approvedAt?: string;
   createdAt: string;

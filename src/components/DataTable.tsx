@@ -11,6 +11,10 @@ interface DataTableProps<T> {
   onDelete?: (item: T) => void;
   onDuplicate?: (item: T) => void;
   loading?: boolean;
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onSelect?: (id: string, selected: boolean) => void;
+  onSelectAll?: (selected: boolean) => void;
 }
 
 export function DataTable<T extends { id: string }>({
@@ -20,6 +24,10 @@ export function DataTable<T extends { id: string }>({
   onDelete,
   onDuplicate,
   loading = false,
+  selectable = false,
+  selectedIds = new Set(),
+  onSelect,
+  onSelectAll,
 }: DataTableProps<T>) {
   if (loading) {
     return (
@@ -43,6 +51,16 @@ export function DataTable<T extends { id: string }>({
       <table className="min-w-full divide-y divide-neutral-200">
         <thead className="bg-secondary-50">
           <tr>
+            {selectable && (
+              <th className="px-6 py-3 text-left text-xs font-semibold text-secondary-700 uppercase tracking-wider w-12">
+                <input
+                  type="checkbox"
+                  checked={data.length > 0 && data.every((item) => selectedIds.has(item.id))}
+                  onChange={(e) => onSelectAll?.(e.target.checked)}
+                  className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                />
+              </th>
+            )}
             {columns.map((column) => (
               <th
                 key={String(column.key)}
@@ -60,7 +78,20 @@ export function DataTable<T extends { id: string }>({
         </thead>
         <tbody className="bg-white divide-y divide-neutral-200">
           {data.map((item) => (
-            <tr key={item.id} className="hover:bg-secondary-50 transition-colors">
+            <tr 
+              key={item.id} 
+              className={`hover:bg-secondary-50 transition-colors ${selectedIds.has(item.id) ? 'bg-primary-50' : ''}`}
+            >
+              {selectable && (
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(item.id)}
+                    onChange={(e) => onSelect?.(item.id, e.target.checked)}
+                    className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                  />
+                </td>
+              )}
               {columns.map((column) => (
                 <td key={String(column.key)} className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900">
                   {column.render

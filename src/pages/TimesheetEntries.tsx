@@ -39,6 +39,34 @@ export const TimesheetEntries = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimesheetEntry | null>(null);
+  const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+  const [bulkActionModal, setBulkActionModal] = useState<{
+    isOpen: boolean;
+    action: 'approve' | 'reject' | 'delete' | null;
+    message: string;
+  }>({
+    isOpen: false,
+    action: null,
+    message: '',
+  });
+  const [statusChangeModal, setStatusChangeModal] = useState<{
+    isOpen: boolean;
+    entry: TimesheetEntry | null;
+    newStatus: TimesheetStatus | null;
+    message: string;
+  }>({
+    isOpen: false,
+    entry: null,
+    newStatus: null,
+    message: '',
+  });
+  const [statusDescriptionModal, setStatusDescriptionModal] = useState<{
+    isOpen: boolean;
+    entry: TimesheetEntry | null;
+  }>({
+    isOpen: false,
+    entry: null,
+  });
   
   // Filtros persistentes para ADMIN
   const [filters, setFilters] = useFilters('timesheetEntries', {
@@ -170,16 +198,54 @@ export const TimesheetEntries = () => {
     }
   };
 
-  const handleStatusChange = async (entry: TimesheetEntry, newStatus: TimesheetStatus) => {
+  const handleStatusChange = (entry: TimesheetEntry, newStatus: TimesheetStatus) => {
+    // Se o status não mudou, não faz nada
+    if (entry.status === newStatus) {
+      return;
+    }
+    // Abre modal para inserir mensagem
+    setStatusChangeModal({
+      isOpen: true,
+      entry,
+      newStatus,
+      message: '',
+    });
+  };
+
+  const confirmStatusChange = async () => {
+    if (!statusChangeModal.entry || !statusChangeModal.newStatus) {
+      return;
+    }
+
     try {
-      await api.patch(`/timesheet-entries/${entry.id}`, {
-        status: newStatus,
-      });
+      const payload: any = {
+        status: statusChangeModal.newStatus,
+        statusDescription: statusChangeModal.message || undefined,
+      };
+
+      // Se está aprovando ou rejeitando, salva também o approverId e approvedAt
+      if (statusChangeModal.newStatus === TimesheetStatus.APPROVED || 
+          statusChangeModal.newStatus === TimesheetStatus.REJECTED) {
+        payload.approverId = currentUser?.id;
+        payload.approvedAt = new Date().toISOString();
+      }
+
+      await api.patch(`/timesheet-entries/${statusChangeModal.entry.id}`, payload);
+      setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
       fetchData();
     } catch (error: any) {
       console.error('Erro ao alterar status:', error);
       alert(error.response?.data?.message || 'Erro ao alterar status');
+      // Em caso de erro, fecha o modal e recarrega os dados para restaurar o status original
+      setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
+      fetchData();
     }
+  };
+
+  const cancelStatusChange = () => {
+    setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
+    // Recarrega os dados para restaurar o valor original do select
+    fetchData();
   };
 
   const handleDuplicate = (entry: TimesheetEntry) => {
@@ -269,6 +335,47 @@ export const TimesheetEntries = () => {
       }));
       }, [entries, filters, isAdmin, isConsultant, currentUser?.id]);
 
+  // Obtém todos os lançamentos visíveis na tela
+  const allVisibleEntries = useMemo(() => {
+    return filteredAndGroupedEntries.flatMap(({ entries: dayEntries }) => dayEntries);
+  }, [filteredAndGroupedEntries]);
+
+  // Handlers para seleção múltipla
+  const handleSelectEntry = (id: string, selected: boolean) => {
+    setSelectedEntries((prev) => {
+      const newSet = new Set(prev);
+      if (selected) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllVisible = () => {
+    const allIds = new Set(allVisibleEntries.map((entry) => entry.id));
+    const allSelected = allVisibleEntries.length > 0 && 
+      allVisibleEntries.every((entry) => selectedEntries.has(entry.id));
+    
+    if (allSelected) {
+      // Se todos estão selecionados, desmarca todos
+      setSelectedEntries(new Set());
+    } else {
+      // Seleciona todos os visíveis
+      setSelectedEntries(allIds);
+    }
+  };
+
+  // Limpa seleção quando os dados mudam
+  useEffect(() => {
+    setSelectedEntries((prev) => {
+      const visibleIds = new Set(allVisibleEntries.map((entry) => entry.id));
+      const filtered = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return filtered;
+    });
+  }, [allVisibleEntries]);
+
   // Gera lista de meses disponíveis baseado nos dados
   const availableMonths = useMemo(() => {
     const monthSet = new Set<string>();
@@ -346,7 +453,12 @@ export const TimesheetEntries = () => {
             <select
               className="input-base text-sm py-1"
               value={entry.status}
-              onChange={(e) => handleStatusChange(entry, e.target.value as TimesheetStatus)}
+              onChange={(e) => {
+                const newStatus = e.target.value as TimesheetStatus;
+                handleStatusChange(entry, newStatus);
+                // Reseta o select para o valor original se o modal for cancelado
+                // (será atualizado quando fetchData for chamado)
+              }}
             >
               {Object.values(TimesheetStatus).map((status) => (
                 <option key={status} value={status}>
@@ -361,6 +473,23 @@ export const TimesheetEntries = () => {
             {statusTexts[entry.status]}
           </span>
         );
+      },
+    },
+    {
+      key: 'statusDescription',
+      label: 'Observação do Status',
+      render: (entry: TimesheetEntry) => {
+        if (entry.statusDescription) {
+          return (
+            <button
+              onClick={() => setStatusDescriptionModal({ isOpen: true, entry })}
+              className="text-primary-600 hover:text-primary-800 text-sm font-medium underline transition-colors"
+            >
+              Ver mais
+            </button>
+          );
+        }
+        return <span className="text-sm text-secondary-400">-</span>;
       },
     },
   ];
@@ -407,6 +536,83 @@ export const TimesheetEntries = () => {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Botão Selecionar Todos */}
+      {allVisibleEntries.length > 0 && (
+        <div className="mb-4 flex justify-end">
+          <button
+            onClick={handleSelectAllVisible}
+            className="btn-secondary text-sm"
+          >
+            {allVisibleEntries.length > 0 && 
+             allVisibleEntries.every((entry) => selectedEntries.has(entry.id))
+              ? 'Desmarcar Todos'
+              : `Selecionar Todos (${allVisibleEntries.length})`
+            }
+          </button>
+        </div>
+      )}
+
+      {/* Barra de ações para seleção múltipla */}
+      {selectedEntries.size > 0 && (
+        <div className="mb-6 card bg-primary-50 border-primary-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium text-primary-700">
+                {selectedEntries.size} {selectedEntries.size === 1 ? 'lançamento selecionado' : 'lançamentos selecionados'}
+              </span>
+              <button
+                onClick={() => setSelectedEntries(new Set())}
+                className="text-sm text-secondary-600 hover:text-secondary-800 underline"
+              >
+                Desmarcar todos
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <>
+                  <button
+                    onClick={() => {
+                      setBulkActionModal({
+                        isOpen: true,
+                        action: 'approve',
+                        message: '',
+                      });
+                    }}
+                    className="btn-primary text-sm"
+                  >
+                    Aprovar Selecionados
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBulkActionModal({
+                        isOpen: true,
+                        action: 'reject',
+                        message: '',
+                      });
+                    }}
+                    className="btn-secondary text-sm bg-error-50 text-error-700 hover:bg-error-100 border-error-200"
+                  >
+                    Rejeitar Selecionados
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => {
+                  setBulkActionModal({
+                    isOpen: true,
+                    action: 'delete',
+                    message: '',
+                  });
+                }}
+                className="btn-secondary text-sm bg-error-50 text-error-700 hover:bg-error-100 border-error-200"
+              >
+                Excluir Selecionados
+              </button>
             </div>
           </div>
         </div>
@@ -512,6 +718,21 @@ export const TimesheetEntries = () => {
                 onDelete={handleDelete}
                 onDuplicate={handleDuplicate}
                 loading={false}
+                selectable={true}
+                selectedIds={selectedEntries}
+                onSelect={handleSelectEntry}
+                onSelectAll={(selected) => {
+                  const dayEntryIds = new Set(dayEntries.map((e) => e.id));
+                  setSelectedEntries((prev) => {
+                    const newSet = new Set(prev);
+                    if (selected) {
+                      dayEntryIds.forEach((id) => newSet.add(id));
+                    } else {
+                      dayEntryIds.forEach((id) => newSet.delete(id));
+                    }
+                    return newSet;
+                  });
+                }}
               />
             </div>
           ))}
@@ -575,7 +796,7 @@ export const TimesheetEntries = () => {
             error={errors.activityType?.message}
           />
           <Textarea
-            label="Notas"
+            label="Descrição"
             rows={3}
             register={register('notes')}
             error={errors.notes?.message}
@@ -607,6 +828,262 @@ export const TimesheetEntries = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal de Confirmação para Ações em Lote */}
+      <Modal
+        isOpen={bulkActionModal.isOpen}
+        onClose={() => setBulkActionModal({ isOpen: false, action: null, message: '' })}
+        title={
+          bulkActionModal.action === 'approve'
+            ? 'Aprovar Lançamentos'
+            : bulkActionModal.action === 'reject'
+            ? 'Rejeitar Lançamentos'
+            : 'Excluir Lançamentos'
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-secondary-700">
+            {bulkActionModal.action === 'approve' && (
+              <>Tem certeza que deseja aprovar <strong>{selectedEntries.size}</strong> lançamento(s)?</>
+            )}
+            {bulkActionModal.action === 'reject' && (
+              <>Tem certeza que deseja rejeitar <strong>{selectedEntries.size}</strong> lançamento(s)?</>
+            )}
+            {bulkActionModal.action === 'delete' && (
+              <>Tem certeza que deseja excluir <strong>{selectedEntries.size}</strong> lançamento(s)? Esta ação não pode ser desfeita.</>
+            )}
+          </p>
+
+          {(bulkActionModal.action === 'approve' || bulkActionModal.action === 'reject') && (
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-1">
+                Mensagem (opcional)
+              </label>
+              <textarea
+                rows={4}
+                value={bulkActionModal.message}
+                onChange={(e) =>
+                  setBulkActionModal({ ...bulkActionModal, message: e.target.value })
+                }
+                placeholder={
+                  bulkActionModal.action === 'approve'
+                    ? 'Adicione uma mensagem de aprovação...'
+                    : 'Adicione uma mensagem de rejeição...'
+                }
+                className="input-base w-full"
+              />
+              <p className="mt-1 text-xs text-secondary-500">
+                Esta mensagem será replicada para todos os lançamentos selecionados.
+              </p>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-2 pt-4 border-t border-neutral-200">
+            <button
+              type="button"
+              onClick={() => setBulkActionModal({ isOpen: false, action: null, message: '' })}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (bulkActionModal.action === 'approve') {
+                    await Promise.all(
+                      Array.from(selectedEntries).map((id) =>
+                        api.patch(`/timesheet-entries/${id}`, {
+                          status: TimesheetStatus.APPROVED,
+                          statusDescription: bulkActionModal.message || undefined,
+                          approverId: currentUser?.id,
+                          approvedAt: new Date().toISOString(),
+                        })
+                      )
+                    );
+                  } else if (bulkActionModal.action === 'reject') {
+                    await Promise.all(
+                      Array.from(selectedEntries).map((id) =>
+                        api.patch(`/timesheet-entries/${id}`, {
+                          status: TimesheetStatus.REJECTED,
+                          statusDescription: bulkActionModal.message || undefined,
+                          approverId: currentUser?.id,
+                          approvedAt: new Date().toISOString(),
+                        })
+                      )
+                    );
+                  } else if (bulkActionModal.action === 'delete') {
+                    await Promise.all(
+                      Array.from(selectedEntries).map((id) => api.delete(`/timesheet-entries/${id}`))
+                    );
+                  }
+                  setSelectedEntries(new Set());
+                  setBulkActionModal({ isOpen: false, action: null, message: '' });
+                  fetchData();
+                } catch (error: any) {
+                  console.error(`Erro ao ${bulkActionModal.action} lançamentos:`, error);
+                  alert(
+                    error.response?.data?.message ||
+                      `Erro ao ${bulkActionModal.action === 'approve' ? 'aprovar' : bulkActionModal.action === 'reject' ? 'rejeitar' : 'excluir'} lançamentos`
+                  );
+                }
+              }}
+              className={
+                bulkActionModal.action === 'delete'
+                  ? 'btn-primary bg-error-600 hover:bg-error-700 text-sm'
+                  : 'btn-primary text-sm'
+              }
+            >
+              {bulkActionModal.action === 'approve' && 'Aprovar'}
+              {bulkActionModal.action === 'reject' && 'Rejeitar'}
+              {bulkActionModal.action === 'delete' && 'Excluir'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal de Mudança de Status Individual */}
+      <Modal
+        isOpen={statusChangeModal.isOpen}
+        onClose={cancelStatusChange}
+        title={`Alterar Status - ${statusChangeModal.entry ? statusTexts[statusChangeModal.newStatus || statusChangeModal.entry.status] : ''}`}
+      >
+        <div className="space-y-4">
+          {statusChangeModal.entry && (
+            <>
+              <div className="bg-secondary-50 p-3 rounded-lg">
+                <p className="text-sm text-secondary-700">
+                  <strong>Projeto:</strong> {statusChangeModal.entry.project?.name || '-'}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Data:</strong> {new Date(statusChangeModal.entry.date).toLocaleDateString('pt-BR')}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Horas:</strong> {statusChangeModal.entry.hours}h
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Status atual:</strong>{' '}
+                  <span className={`inline-flex items-center rounded-md ${statusColors[statusChangeModal.entry.status]} px-2 py-1 text-xs font-medium`}>
+                    {statusTexts[statusChangeModal.entry.status]}
+                  </span>
+                </p>
+                {statusChangeModal.newStatus && (
+                  <p className="text-sm text-secondary-700 mt-1">
+                    <strong>Novo status:</strong>{' '}
+                    <span className={`inline-flex items-center rounded-md ${statusColors[statusChangeModal.newStatus]} px-2 py-1 text-xs font-medium`}>
+                      {statusTexts[statusChangeModal.newStatus]}
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-secondary-700 mb-1">
+                  Mensagem (opcional)
+                </label>
+                <textarea
+                  rows={4}
+                  value={statusChangeModal.message}
+                  onChange={(e) =>
+                    setStatusChangeModal({ ...statusChangeModal, message: e.target.value })
+                  }
+                  placeholder="Adicione uma observação sobre a mudança de status..."
+                  className="input-base w-full"
+                />
+                <p className="mt-1 text-xs text-secondary-500">
+                  Esta mensagem será armazenada como observação do status.
+                </p>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end space-x-2 pt-4 border-t border-neutral-200">
+            <button
+              type="button"
+              onClick={cancelStatusChange}
+              className="btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={confirmStatusChange}
+              className="btn-primary"
+            >
+              Confirmar Alteração
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal de Visualização de Observação do Status */}
+      <Modal
+        isOpen={statusDescriptionModal.isOpen}
+        onClose={() => setStatusDescriptionModal({ isOpen: false, entry: null })}
+        title="Observação do Status"
+      >
+        <div className="space-y-4">
+          {statusDescriptionModal.entry && (
+            <>
+              <div className="bg-secondary-50 p-3 rounded-lg">
+                <p className="text-sm text-secondary-700">
+                  <strong>Projeto:</strong> {statusDescriptionModal.entry.project?.name || '-'}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Data:</strong> {new Date(statusDescriptionModal.entry.date).toLocaleDateString('pt-BR')}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Horas:</strong> {statusDescriptionModal.entry.hours}h
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Status:</strong>{' '}
+                  <span className={`inline-flex items-center rounded-md ${statusColors[statusDescriptionModal.entry.status]} px-2 py-1 text-xs font-medium`}>
+                    {statusTexts[statusDescriptionModal.entry.status]}
+                  </span>
+                </p>
+                {statusDescriptionModal.entry.approver && (
+                  <p className="text-sm text-secondary-700 mt-1">
+                    <strong>Aprovado por:</strong> {statusDescriptionModal.entry.approver.name}
+                  </p>
+                )}
+                {statusDescriptionModal.entry.approvedAt && (
+                  <p className="text-sm text-secondary-700 mt-1">
+                    <strong>Data de aprovação:</strong>{' '}
+                    {new Date(statusDescriptionModal.entry.approvedAt).toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-secondary-700 mb-2">
+                  Observação
+                </label>
+                <div className="bg-white border border-secondary-200 rounded-lg p-4 min-h-[100px]">
+                  <p className="text-sm text-secondary-700 whitespace-pre-wrap break-words">
+                    {statusDescriptionModal.entry.statusDescription}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end pt-4 border-t border-neutral-200">
+            <button
+              type="button"
+              onClick={() => setStatusDescriptionModal({ isOpen: false, entry: null })}
+              className="btn-primary"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
