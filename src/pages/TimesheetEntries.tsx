@@ -12,14 +12,56 @@ import { statusColors, statusTexts } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../hooks/useFilters';
 
+// Função para aplicar máscara de hora (HH:MM)
+const applyTimeMask = (value: string): string => {
+  // Remove tudo que não é número
+  const numbers = value.replace(/\D/g, '');
+  
+  // Limita a 4 dígitos
+  const limited = numbers.slice(0, 4);
+  
+  // Aplica a máscara HH:MM
+  if (limited.length === 0) return '';
+  if (limited.length <= 2) return limited;
+  return `${limited.slice(0, 2)}:${limited.slice(2, 4)}`;
+};
+
+// Função para converter HH:MM para horas decimais
+const timeToDecimal = (time: string): number => {
+  const match = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return 0;
+  
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  
+  // Validação: horas até 23, minutos até 59
+  if (hours > 23 || minutes > 59) return 0;
+  
+  return hours + minutes / 60;
+};
+
+// Função para converter horas decimais para HH:MM
+const decimalToTime = (decimal: number): string => {
+  const hours = Math.floor(decimal);
+  const minutes = Math.round((decimal - hours) * 60);
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+};
+
 const baseTimesheetEntrySchema = {
   userId: z.string().min(1, 'Usuário é obrigatório'),
   projectId: z.string().min(1, 'Projeto é obrigatório'),
   date: z.string().min(1, 'Data é obrigatória'),
   hours: z.string().min(1, 'Horas é obrigatório').refine((val) => {
-    const num = parseFloat(val);
-    return !isNaN(num) && num > 0;
-  }, 'Horas deve ser um número maior que zero'),
+    // Valida formato HH:MM
+    const timeMatch = val.match(/^(\d{1,2}):(\d{2})$/);
+    if (!timeMatch) {
+      return false;
+    }
+    const hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    // Valida: horas até 23, minutos até 59, e pelo menos 1 minuto
+    return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59 && (hours > 0 || minutes > 0);
+  }, 'Formato inválido. Use HH:MM (ex: 08:30)'),
   activityType: z.string().min(1, 'Tipo de atividade é obrigatório'),
   notes: z.string().optional(),
 };
@@ -144,7 +186,7 @@ export const TimesheetEntries = () => {
       userId: entry.userId,
       projectId: entry.projectId,
       date: new Date(entry.date).toISOString().split('T')[0],
-      hours: entry.hours.toString(),
+      hours: decimalToTime(entry.hours),
       activityType: entry.activityType,
       notes: entry.notes || '',
       status: entry.status,
@@ -174,11 +216,14 @@ export const TimesheetEntries = () => {
 
   const onSubmit = async (data: TimesheetEntryFormData) => {
     try {
+      // Converte HH:MM para horas decimais
+      const hoursDecimal = timeToDecimal(data.hours);
+      
       const payload: any = {
         userId: data.userId,
         projectId: data.projectId,
         date: new Date(data.date),
-        hours: parseFloat(data.hours),
+        hours: hoursDecimal,
         activityType: data.activityType,
         notes: data.notes || undefined,
         // CONSULTANT sempre usa PENDING, ADMIN pode escolher
@@ -260,7 +305,7 @@ export const TimesheetEntries = () => {
       userId: isConsultant ? currentUser?.id || '' : entry.userId,
       projectId: entry.projectId,
       date: new Date(entry.date).toISOString().split('T')[0],
-      hours: entry.hours.toString(),
+      hours: decimalToTime(entry.hours),
       activityType: entry.activityType,
       notes: entry.notes || '',
       status: TimesheetStatus.PENDING, // Duplicado sempre começa como PENDING
@@ -780,14 +825,37 @@ export const TimesheetEntries = () => {
             register={register('date')}
             error={errors.date?.message}
           />
-          <Input
-            type="number"
-            step="0.5"
-            label="Horas"
-            required
-            register={register('hours')}
-            error={errors.hours?.message}
-          />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">
+              Horas <span className="text-error-500 ml-1">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="HH:MM (ex: 08:30)"
+              maxLength={5}
+              value={watch('hours') || ''}
+              onChange={(e) => {
+                const masked = applyTimeMask(e.target.value);
+                setValue('hours', masked, { shouldValidate: true });
+              }}
+              onBlur={() => {
+                const value = watch('hours');
+                if (value && !value.match(/^\d{2}:\d{2}$/)) {
+                  // Se não está completo, tenta completar
+                  const numbers = value.replace(/\D/g, '');
+                  if (numbers.length > 0) {
+                    const padded = numbers.padEnd(4, '0');
+                    const formatted = `${padded.slice(0, 2)}:${padded.slice(2, 4)}`;
+                    setValue('hours', formatted, { shouldValidate: true });
+                  }
+                }
+              }}
+              className={`input-base ${errors.hours ? 'border-error-500 focus:ring-error-500 focus:border-error-500' : ''}`}
+            />
+            {errors.hours && (
+              <p className="mt-1 text-sm text-error-600">{errors.hours.message}</p>
+            )}
+          </div>
           <Input
             type="text"
             label="Tipo de Atividade"
