@@ -124,6 +124,11 @@ export const TimesheetEntries = () => {
     isOpen: false,
     entry: null,
   });
+  const [requestApprovalModal, setRequestApprovalModal] = useState<{
+    isOpen: boolean;
+  }>({
+    isOpen: false,
+  });
   
   // Filtros persistentes - sempre inicia com o mês atual
   const [filters, setFilters] = useFilters('timesheetEntries', {
@@ -324,6 +329,97 @@ export const TimesheetEntries = () => {
     setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
     // Recarrega os dados para restaurar o valor original do select
     fetchData();
+  };
+
+  // Calcula o total de horas do mês selecionado para o consultor
+  const getMonthTotalHours = useMemo(() => {
+    if (!isConsultant || !currentUser?.id) return '00:00';
+    
+    const activeMonth = filters.filterMonth || getCurrentMonth();
+    const [year, month] = activeMonth.split('-');
+    
+    const monthEntries = entries.filter((e) => {
+      if (e.userId !== currentUser.id) return false;
+      const entryDate = new Date(e.date);
+      return entryDate.getFullYear() === parseInt(year) && 
+             entryDate.getMonth() + 1 === parseInt(month);
+    });
+    
+    return sumHoursToTime(monthEntries);
+  }, [entries, filters.filterMonth, isConsultant, currentUser?.id]);
+
+  // Função para solicitar aprovação das horas do mês
+  const handleRequestApproval = async () => {
+    if (!currentUser?.id) {
+      alert('Usuário não identificado');
+      return;
+    }
+
+    const activeMonth = filters.filterMonth || getCurrentMonth();
+    const [year, month] = activeMonth.split('-');
+    const yearNum = parseInt(year, 10);
+    const monthNum = parseInt(month, 10);
+
+    try {
+      // Verifica se já existe um submission para este mês
+      let submission;
+      try {
+        const existingSubmission = await api.get(
+          `/timesheet-submissions/by-user-month?userId=${currentUser.id}&year=${year}&month=${month}`
+        );
+        submission = existingSubmission.data;
+      } catch (error: any) {
+        // Se não encontrou, cria um novo
+        if (error.response?.status === 404) {
+          submission = null;
+        } else {
+          throw error;
+        }
+      }
+
+      let submissionId: string;
+      
+      if (submission) {
+        // Atualiza o submission existente
+        const updatedSubmission = await api.patch(`/timesheet-submissions/${submission.id}`, {
+          status: 'SUBMITTED',
+          submittedAt: new Date().toISOString(),
+        });
+        submissionId = updatedSubmission.data.id;
+      } else {
+        // Cria um novo submission
+        const newSubmission = await api.post('/timesheet-submissions', {
+          userId: currentUser.id,
+          year: yearNum,
+          month: monthNum,
+          status: 'SUBMITTED',
+          submittedAt: new Date().toISOString(),
+        });
+        submissionId = newSubmission.data.id;
+      }
+
+      // Obtém todos os entries do mês do consultor
+      const monthEntries = entries.filter((e) => {
+        if (e.userId !== currentUser.id) return false;
+        const entryDate = new Date(e.date);
+        return entryDate.getFullYear() === yearNum && 
+               entryDate.getMonth() + 1 === monthNum;
+      });
+
+      // Atualiza todos os entries do mês para associá-los ao submission
+      for (const entry of monthEntries) {
+        await api.patch(`/timesheet-entries/${entry.id}`, {
+          submissionId: submissionId,
+        });
+      }
+
+      alert('Solicitação de aprovação enviada com sucesso!');
+      setRequestApprovalModal({ isOpen: false });
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao solicitar aprovação:', error);
+      alert(error.response?.data?.message || 'Erro ao solicitar aprovação');
+    }
   };
 
   const handleDuplicate = (entry: TimesheetEntry) => {
@@ -623,9 +719,9 @@ export const TimesheetEntries = () => {
         </div>
       )}
 
-      {/* Botão Selecionar Todos */}
+      {/* Botão Selecionar Todos e Solicitar Aprovação */}
       {allVisibleEntries.length > 0 && (
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex justify-end gap-2">
           <button
             onClick={handleSelectAllVisible}
             className="btn-secondary text-sm"
@@ -636,6 +732,14 @@ export const TimesheetEntries = () => {
               : `Selecionar Todos (${allVisibleEntries.length})`
             }
           </button>
+          {isConsultant && (
+            <button
+              onClick={() => setRequestApprovalModal({ isOpen: true })}
+              className="btn-primary text-sm"
+            >
+              Solicitar Aprovação
+            </button>
+          )}
         </div>
       )}
 
@@ -1194,6 +1298,50 @@ export const TimesheetEntries = () => {
               className="btn-primary"
             >
               Fechar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal de Solicitação de Aprovação */}
+      <Modal
+        isOpen={requestApprovalModal.isOpen}
+        onClose={() => setRequestApprovalModal({ isOpen: false })}
+        title="Solicitar Aprovação de Horas"
+      >
+        <div className="space-y-4">
+          <div className="bg-primary-50 p-4 rounded-lg">
+            <p className="text-sm text-secondary-700 mb-2">
+              <strong>Mês selecionado:</strong>{' '}
+              {(() => {
+                const activeMonth = filters.filterMonth || getCurrentMonth();
+                const [year, month] = activeMonth.split('-');
+                const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+              })()}
+            </p>
+            <p className="text-lg font-semibold text-primary-700">
+              <strong>Total de horas do mês:</strong> {getMonthTotalHours}
+            </p>
+          </div>
+          
+          <p className="text-sm text-secondary-700">
+            Tem certeza que deseja solicitar aprovação das horas deste mês? 
+            Todos os lançamentos do mês serão enviados para aprovação.
+          </p>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <button
+              onClick={() => setRequestApprovalModal({ isOpen: false })}
+              className="btn-secondary text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleRequestApproval}
+              className="btn-primary text-sm"
+            >
+              Confirmar Solicitação
             </button>
           </div>
         </div>
