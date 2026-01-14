@@ -53,6 +53,14 @@ const sumHoursToTime = (entries: TimesheetEntry[]): string => {
   return decimalToTime(total);
 };
 
+// Função para obter o mês atual no formato YYYY-MM
+const getCurrentMonth = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+};
+
 const baseTimesheetEntrySchema = {
   userId: z.string().min(1, 'Usuário é obrigatório'),
   projectId: z.string().min(1, 'Projeto é obrigatório'),
@@ -117,14 +125,25 @@ export const TimesheetEntries = () => {
     entry: null,
   });
   
-  // Filtros persistentes para ADMIN
+  // Filtros persistentes - sempre inicia com o mês atual
   const [filters, setFilters] = useFilters('timesheetEntries', {
     filterUser: '',
     filterProject: '',
     filterStatus: '',
     filterDate: '',
-    filterMonth: '',
+    filterMonth: getCurrentMonth(),
   });
+
+  // Garante que sempre há um filtro mensal ativo (inicializa com mês atual se não houver)
+  useEffect(() => {
+    if (!filters.filterMonth) {
+      const currentMonth = getCurrentMonth();
+      setFilters((prev) => ({
+        ...prev,
+        filterMonth: currentMonth,
+      }));
+    }
+  }, [filters.filterMonth, setFilters]);
 
   const isConsultant = currentUser?.role === UserRole.CONSULTANT;
   const isAdmin = currentUser?.role === UserRole.ADMIN;
@@ -332,6 +351,15 @@ export const TimesheetEntries = () => {
     // Aplica filtros
     let filtered = entries;
 
+    // Filtro mensal sempre é aplicado (obrigatório)
+    const activeMonth = filters.filterMonth || getCurrentMonth();
+    const [year, month] = activeMonth.split('-');
+    filtered = filtered.filter((e) => {
+      const entryDate = new Date(e.date);
+      return entryDate.getFullYear() === parseInt(year) && 
+             entryDate.getMonth() + 1 === parseInt(month);
+    });
+
     if (isAdmin) {
       if (filters.filterUser) {
         filtered = filtered.filter((e) => e.userId === filters.filterUser);
@@ -349,27 +377,9 @@ export const TimesheetEntries = () => {
           return entryDateKey === filterDateKey;
         });
       }
-      if (filters.filterMonth) {
-        const [year, month] = filters.filterMonth.split('-');
-        filtered = filtered.filter((e) => {
-          const entryDate = new Date(e.date);
-          return entryDate.getFullYear() === parseInt(year) && 
-                 entryDate.getMonth() + 1 === parseInt(month);
-        });
-      }
     } else if (isConsultant) {
       // CONSULTANT só vê seus próprios lançamentos
       filtered = filtered.filter((e) => e.userId === currentUser?.id);
-      
-      // Aplica filtro de mês também para CONSULTANT
-      if (filters.filterMonth) {
-        const [year, month] = filters.filterMonth.split('-');
-        filtered = filtered.filter((e) => {
-          const entryDate = new Date(e.date);
-          return entryDate.getFullYear() === parseInt(year) && 
-                 entryDate.getMonth() + 1 === parseInt(month);
-        });
-      }
     }
 
     // Agrupa por data
@@ -591,7 +601,7 @@ export const TimesheetEntries = () => {
                     onClick={() => {
                       setFilters({
                         ...filters,
-                        filterMonth: isActive ? '' : month.key,
+                        filterMonth: month.key, // Sempre seleciona o mês (não permite desmarcar)
                         filterDate: '', // Limpa filtro de data quando seleciona mês
                       });
                     }}
@@ -740,7 +750,7 @@ export const TimesheetEntries = () => {
               />
             </div>
           </div>
-          {(filters.filterUser || filters.filterProject || filters.filterStatus || filters.filterDate || filters.filterMonth) && (
+          {(filters.filterUser || filters.filterProject || filters.filterStatus || filters.filterDate || filters.filterMonth !== getCurrentMonth()) && (
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -749,7 +759,7 @@ export const TimesheetEntries = () => {
                     filterProject: '',
                     filterStatus: '',
                     filterDate: '',
-                    filterMonth: '',
+                    filterMonth: getCurrentMonth(), // Volta para o mês atual ao limpar
                   });
                 }}
                 className="btn-secondary text-sm"
