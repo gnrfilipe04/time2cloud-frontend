@@ -47,6 +47,12 @@ const decimalToTime = (decimal: number): string => {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 };
 
+// Função para somar horas decimais e converter para HH:MM
+const sumHoursToTime = (entries: TimesheetEntry[]): string => {
+  const total = entries.reduce((sum, e) => sum + e.hours, 0);
+  return decimalToTime(total);
+};
+
 const baseTimesheetEntrySchema = {
   userId: z.string().min(1, 'Usuário é obrigatório'),
   projectId: z.string().min(1, 'Projeto é obrigatório'),
@@ -64,6 +70,7 @@ const baseTimesheetEntrySchema = {
   }, 'Formato inválido. Use HH:MM (ex: 08:30)'),
   activityType: z.string().min(1, 'Tipo de atividade é obrigatório'),
   notes: z.string().optional(),
+  statusDescription: z.string().optional(),
 };
 
 const timesheetEntrySchema = z.object({
@@ -170,6 +177,7 @@ export const TimesheetEntries = () => {
       activityType: '',
       notes: '',
       status: TimesheetStatus.PENDING,
+      statusDescription: '',
     });
     setIsModalOpen(true);
   };
@@ -190,6 +198,7 @@ export const TimesheetEntries = () => {
       activityType: entry.activityType,
       notes: entry.notes || '',
       status: entry.status,
+      statusDescription: entry.statusDescription || '',
     });
     setIsModalOpen(true);
   };
@@ -229,6 +238,11 @@ export const TimesheetEntries = () => {
         // CONSULTANT sempre usa PENDING, ADMIN pode escolher
         status: isConsultant ? TimesheetStatus.PENDING : (data.status || TimesheetStatus.PENDING),
       };
+
+      // Apenas admin pode editar statusDescription ao editar um lançamento
+      if (isAdmin && editingEntry && data.statusDescription) {
+        payload.statusDescription = data.statusDescription || undefined;
+      }
 
       if (editingEntry) {
         await api.patch(`/timesheet-entries/${editingEntry.id}`, payload);
@@ -474,24 +488,35 @@ export const TimesheetEntries = () => {
     ...(isAdmin ? [{
       key: 'user',
       label: 'Usuário',
+      width: '150px',
+      wrap: true,
       render: (entry: TimesheetEntry) => entry.user?.name || '-',
     }] : []),
     {
       key: 'project',
       label: 'Projeto',
+      width: '200px',
+      wrap: true,
       render: (entry: TimesheetEntry) => entry.project?.name || '-',
     },
     {
       key: 'hours',
       label: 'Horas',
+      width: '80px',
+      wrap: false,
+      render: (entry: TimesheetEntry) => decimalToTime(entry.hours),
     },
     {
       key: 'activityType',
       label: 'Tipo de Atividade',
+      width: '180px',
+      wrap: true,
     },
     {
       key: 'status',
       label: 'Status',
+      width: '180px',
+      wrap: false,
       render: (entry: TimesheetEntry) => {
         if (isAdmin) {
           return (
@@ -523,6 +548,8 @@ export const TimesheetEntries = () => {
     {
       key: 'statusDescription',
       label: 'Observação do Status',
+      width: '150px',
+      wrap: true,
       render: (entry: TimesheetEntry) => {
         if (entry.statusDescription) {
           return (
@@ -753,7 +780,7 @@ export const TimesheetEntries = () => {
                 </h2>
                 <span className="text-sm text-primary-600 font-medium">
                   {dayEntries.length} {dayEntries.length === 1 ? 'lançamento' : 'lançamentos'} •{' '}
-                  {dayEntries.reduce((sum, e) => sum + e.hours, 0).toFixed(1)}h total
+                  {sumHoursToTime(dayEntries)} total
                 </span>
               </div>
               <DataTable
@@ -878,6 +905,14 @@ export const TimesheetEntries = () => {
                 value: status,
                 label: statusTexts[status],
               }))}
+            />
+          )}
+          {isAdmin && editingEntry && (
+            <Textarea
+              label="Observação do Status"
+              rows={3}
+              register={register('statusDescription')}
+              error={errors.statusDescription?.message}
             />
           )}
           <div className="flex justify-end space-x-2 pt-4">
@@ -1028,7 +1063,7 @@ export const TimesheetEntries = () => {
                   <strong>Data:</strong> {new Date(statusChangeModal.entry.date).toLocaleDateString('pt-BR')}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
-                  <strong>Horas:</strong> {statusChangeModal.entry.hours}h
+                  <strong>Horas:</strong> {decimalToTime(statusChangeModal.entry.hours)}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
                   <strong>Status atual:</strong>{' '}
@@ -1102,7 +1137,7 @@ export const TimesheetEntries = () => {
                   <strong>Data:</strong> {new Date(statusDescriptionModal.entry.date).toLocaleDateString('pt-BR')}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
-                  <strong>Horas:</strong> {statusDescriptionModal.entry.hours}h
+                  <strong>Horas:</strong> {decimalToTime(statusDescriptionModal.entry.hours)}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
                   <strong>Status:</strong>{' '}

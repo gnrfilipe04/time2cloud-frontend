@@ -2,6 +2,8 @@ interface Column<T> {
   key: keyof T | string;
   label: string;
   render?: (item: T) => React.ReactNode;
+  width?: string;
+  wrap?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -65,6 +67,7 @@ export function DataTable<T extends { id: string }>({
               <th
                 key={String(column.key)}
                 className="px-6 py-3 text-left text-xs font-semibold text-secondary-700 uppercase tracking-wider"
+                style={column.width ? { width: column.width, minWidth: column.width, maxWidth: column.width } : undefined}
               >
                 {column.label}
               </th>
@@ -93,10 +96,16 @@ export function DataTable<T extends { id: string }>({
                 </td>
               )}
               {columns.map((column) => (
-                <td key={String(column.key)} className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900">
-                  {column.render
-                    ? column.render(item)
-                    : String(item[column.key as keyof T] ?? '')}
+                <td 
+                  key={String(column.key)} 
+                  className={`px-6 py-4 text-sm text-secondary-900 ${column.wrap ? 'break-words overflow-wrap-anywhere' : 'whitespace-nowrap'}`}
+                  style={column.width ? { width: column.width, minWidth: column.width, maxWidth: column.width, wordBreak: column.wrap ? 'break-word' : 'normal' } : undefined}
+                >
+                  <div className={column.wrap ? 'max-w-full' : ''}>
+                    {column.render
+                      ? column.render(item)
+                      : String(item[column.key as keyof T] ?? '')}
+                  </div>
                 </td>
               ))}
               {(onEdit || onDelete || onDuplicate) && (
