@@ -217,7 +217,7 @@ export const TimesheetEntries = () => {
     reset({
       userId: entry.userId,
       projectId: entry.projectId,
-      date: new Date(entry.date).toISOString().split('T')[0],
+      date: entry.date.split('T')[0], // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
       hours: decimalToTime(entry.hours),
       activityType: entry.activityType,
       notes: entry.notes || '',
@@ -340,9 +340,10 @@ export const TimesheetEntries = () => {
     
     const monthEntries = entries.filter((e) => {
       if (e.userId !== currentUser.id) return false;
-      const entryDate = new Date(e.date);
-      return entryDate.getFullYear() === parseInt(year) && 
-             entryDate.getMonth() + 1 === parseInt(month);
+      // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+      const dateStr = e.date.split('T')[0]; // Remove a parte do tempo
+      const [entryYear, entryMonth] = dateStr.split('-');
+      return entryYear === year && entryMonth === month;
     });
     
     return sumHoursToTime(monthEntries);
@@ -401,9 +402,10 @@ export const TimesheetEntries = () => {
       // Obtém todos os entries do mês do consultor
       const monthEntries = entries.filter((e) => {
         if (e.userId !== currentUser.id) return false;
-        const entryDate = new Date(e.date);
-        return entryDate.getFullYear() === yearNum && 
-               entryDate.getMonth() + 1 === monthNum;
+        // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+        const dateStr = e.date.split('T')[0]; // Remove a parte do tempo
+        const [entryYear, entryMonth] = dateStr.split('-');
+        return entryYear === String(yearNum) && entryMonth === String(monthNum).padStart(2, '0');
       });
 
       // Atualiza todos os entries do mês para associá-los ao submission
@@ -433,7 +435,7 @@ export const TimesheetEntries = () => {
     reset({
       userId: isConsultant ? currentUser?.id || '' : entry.userId,
       projectId: entry.projectId,
-      date: new Date(entry.date).toISOString().split('T')[0],
+      date: entry.date.split('T')[0], // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
       hours: decimalToTime(entry.hours),
       activityType: entry.activityType,
       notes: entry.notes || '',
@@ -451,9 +453,10 @@ export const TimesheetEntries = () => {
     const activeMonth = filters.filterMonth || getCurrentMonth();
     const [year, month] = activeMonth.split('-');
     filtered = filtered.filter((e) => {
-      const entryDate = new Date(e.date);
-      return entryDate.getFullYear() === parseInt(year) && 
-             entryDate.getMonth() + 1 === parseInt(month);
+      // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+      const dateStr = e.date.split('T')[0]; // Remove a parte do tempo
+      const [entryYear, entryMonth] = dateStr.split('-');
+      return entryYear === year && entryMonth === month;
     });
 
     if (isAdmin) {
@@ -467,9 +470,10 @@ export const TimesheetEntries = () => {
         filtered = filtered.filter((e) => e.status === filters.filterStatus);
       }
       if (filters.filterDate) {
-        const filterDateKey = new Date(filters.filterDate).toISOString().split('T')[0];
+        const filterDateKey = filters.filterDate; // Já vem no formato YYYY-MM-DD
         filtered = filtered.filter((e) => {
-          const entryDateKey = new Date(e.date).toISOString().split('T')[0];
+          // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+          const entryDateKey = e.date.split('T')[0]; // Remove a parte do tempo
           return entryDateKey === filterDateKey;
         });
       }
@@ -482,7 +486,8 @@ export const TimesheetEntries = () => {
     const grouped: { [key: string]: TimesheetEntry[] } = {};
     
     filtered.forEach((entry) => {
-      const dateKey = new Date(entry.date).toISOString().split('T')[0];
+      // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+      const dateKey = entry.date.split('T')[0]; // Remove a parte do tempo
       if (!grouped[dateKey]) {
         grouped[dateKey] = [];
       }
@@ -545,8 +550,10 @@ export const TimesheetEntries = () => {
   const availableMonths = useMemo(() => {
     const monthSet = new Set<string>();
     entries.forEach((entry) => {
-      const date = new Date(entry.date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+      const dateStr = entry.date.split('T')[0]; // Remove a parte do tempo
+      const [year, month] = dateStr.split('-');
+      const monthKey = `${year}-${month}`;
       monthSet.add(monthKey);
     });
     
