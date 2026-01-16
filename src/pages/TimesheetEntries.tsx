@@ -177,10 +177,11 @@ export const TimesheetEntries = () => {
 
   // Busca o submission do mês atual quando o mês mudar ou quando for consultor
   useEffect(() => {
+    // Limpa o estado imediatamente ao mudar de mês para evitar bloqueios incorretos
+    setCurrentMonthSubmission(null);
+    
     if (isConsultant && currentUser?.id) {
       fetchCurrentMonthSubmission();
-    } else {
-      setCurrentMonthSubmission(null);
     }
   }, [filters.filterMonth, isConsultant, currentUser?.id]);
 
@@ -206,18 +207,29 @@ export const TimesheetEntries = () => {
     
     const activeMonth = filters.filterMonth || getCurrentMonth();
     const [year, month] = activeMonth.split('-');
+    const yearNum = parseInt(year, 10);
+    const monthNum = parseInt(month, 10);
     
     try {
       const submission = await api.get(
         `/timesheet-submissions/by-user-month?userId=${currentUser.id}&year=${year}&month=${month}`
       );
-      setCurrentMonthSubmission(submission.data);
+      
+      // Valida que o submission retornado realmente pertence ao mês selecionado
+      if (submission.data && submission.data.year === yearNum && submission.data.month === monthNum) {
+        setCurrentMonthSubmission(submission.data);
+      } else {
+        // Se o submission não corresponde ao mês, limpa o estado
+        setCurrentMonthSubmission(null);
+      }
     } catch (error: any) {
-      // Se não encontrou submission, não há problema
+      // Se não encontrou submission, não há problema - limpa o estado
       if (error.response?.status === 404) {
         setCurrentMonthSubmission(null);
       } else {
         console.error('Erro ao buscar submission:', error);
+        // Em caso de erro, também limpa o estado para evitar bloqueios incorretos
+        setCurrentMonthSubmission(null);
       }
     }
   };
@@ -225,9 +237,21 @@ export const TimesheetEntries = () => {
   // Verifica se o mês está bloqueado (já foi enviado para aprovação)
   const isMonthLocked = useMemo(() => {
     if (!isConsultant || !currentMonthSubmission) return false;
+    
+    // Valida que o submission pertence ao mês atual selecionado
+    const activeMonth = filters.filterMonth || getCurrentMonth();
+    const [year, month] = activeMonth.split('-');
+    const yearNum = parseInt(year, 10);
+    const monthNum = parseInt(month, 10);
+    
+    // Se o submission não corresponde ao mês selecionado, não bloqueia
+    if (currentMonthSubmission.year !== yearNum || currentMonthSubmission.month !== monthNum) {
+      return false;
+    }
+    
     // Bloqueia se o status for SUBMITTED, CHANGES_REQUESTED ou APPROVED
     return ['SUBMITTED', 'CHANGES_REQUESTED', 'APPROVED'].includes(currentMonthSubmission.status);
-  }, [currentMonthSubmission, isConsultant]);
+  }, [currentMonthSubmission, isConsultant, filters.filterMonth]);
 
   // Verifica se um lançamento está bloqueado (tem submissionId)
   const isEntryLocked = (entry: TimesheetEntry): boolean => {
