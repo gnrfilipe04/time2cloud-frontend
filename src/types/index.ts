@@ -94,6 +94,7 @@ export interface TimesheetEntry {
   statusDescription?: string;
   approverId?: string;
   approvedAt?: string;
+  submissionId?: string;
   createdAt: string;
   updatedAt: string;
   user?: User;

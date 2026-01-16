@@ -17,6 +17,7 @@ interface DataTableProps<T> {
   selectedIds?: Set<string>;
   onSelect?: (id: string, selected: boolean) => void;
   onSelectAll?: (selected: boolean) => void;
+  isItemDisabled?: (item: T) => boolean; // Função para verificar se um item está desabilitado
 }
 
 export function DataTable<T extends { id: string }>({
@@ -30,6 +31,7 @@ export function DataTable<T extends { id: string }>({
   selectedIds = new Set(),
   onSelect,
   onSelectAll,
+  isItemDisabled,
 }: DataTableProps<T>) {
   if (loading) {
     return (
@@ -57,7 +59,12 @@ export function DataTable<T extends { id: string }>({
               <th className="px-6 py-3 text-left text-xs font-semibold text-secondary-700 uppercase tracking-wider w-12">
                 <input
                   type="checkbox"
-                  checked={data.length > 0 && data.every((item) => selectedIds.has(item.id))}
+                  checked={(() => {
+                    const selectableItems = isItemDisabled 
+                      ? data.filter((item) => !isItemDisabled(item))
+                      : data;
+                    return selectableItems.length > 0 && selectableItems.every((item) => selectedIds.has(item.id));
+                  })()}
                   onChange={(e) => onSelectAll?.(e.target.checked)}
                   className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
                 />
@@ -91,7 +98,11 @@ export function DataTable<T extends { id: string }>({
                     type="checkbox"
                     checked={selectedIds.has(item.id)}
                     onChange={(e) => onSelect?.(item.id, e.target.checked)}
-                    className="rounded border-secondary-300 text-primary-600 focus:ring-primary-500"
+                    disabled={isItemDisabled?.(item)}
+                    className={`rounded border-secondary-300 text-primary-600 focus:ring-primary-500 ${
+                      isItemDisabled?.(item) ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title={isItemDisabled?.(item) ? 'Este lançamento está bloqueado' : ''}
                   />
                 </td>
               )}
@@ -114,8 +125,11 @@ export function DataTable<T extends { id: string }>({
                     {onEdit && (
                       <button
                         onClick={() => onEdit(item)}
-                        className="text-primary-600 hover:text-primary-800 transition-colors p-1 rounded hover:bg-primary-50"
-                        title="Editar"
+                        disabled={isItemDisabled?.(item)}
+                        className={`text-primary-600 hover:text-primary-800 transition-colors p-1 rounded hover:bg-primary-50 ${
+                          isItemDisabled?.(item) ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isItemDisabled?.(item) ? 'Este lançamento está bloqueado' : 'Editar'}
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -136,8 +150,11 @@ export function DataTable<T extends { id: string }>({
                     {onDuplicate && (
                       <button
                         onClick={() => onDuplicate(item)}
-                        className="text-warning-600 hover:text-warning-800 transition-colors p-1 rounded hover:bg-warning-50"
-                        title="Duplicar"
+                        disabled={isItemDisabled?.(item)}
+                        className={`text-warning-600 hover:text-warning-800 transition-colors p-1 rounded hover:bg-warning-50 ${
+                          isItemDisabled?.(item) ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isItemDisabled?.(item) ? 'Este lançamento está bloqueado' : 'Duplicar'}
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -158,8 +175,11 @@ export function DataTable<T extends { id: string }>({
                     {onDelete && (
                       <button
                         onClick={() => onDelete(item)}
-                        className="text-error-600 hover:text-error-800 transition-colors p-1 rounded hover:bg-error-50"
-                        title="Excluir"
+                        disabled={isItemDisabled?.(item)}
+                        className={`text-error-600 hover:text-error-800 transition-colors p-1 rounded hover:bg-error-50 ${
+                          isItemDisabled?.(item) ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        title={isItemDisabled?.(item) ? 'Este lançamento está bloqueado' : 'Excluir'}
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"

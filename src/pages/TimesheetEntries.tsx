@@ -129,6 +129,7 @@ export const TimesheetEntries = () => {
   }>({
     isOpen: false,
   });
+  const [currentMonthSubmission, setCurrentMonthSubmission] = useState<any>(null);
   
   // Filtros persistentes - sempre inicia com o mês atual
   const [filters, setFilters] = useFilters('timesheetEntries', {
@@ -174,6 +175,15 @@ export const TimesheetEntries = () => {
     fetchData();
   }, []);
 
+  // Busca o submission do mês atual quando o mês mudar ou quando for consultor
+  useEffect(() => {
+    if (isConsultant && currentUser?.id) {
+      fetchCurrentMonthSubmission();
+    } else {
+      setCurrentMonthSubmission(null);
+    }
+  }, [filters.filterMonth, isConsultant, currentUser?.id]);
+
   const fetchData = async () => {
     try {
       const [entriesRes, usersRes, projectsRes] = await Promise.all([
@@ -189,6 +199,40 @@ export const TimesheetEntries = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCurrentMonthSubmission = async () => {
+    if (!currentUser?.id) return;
+    
+    const activeMonth = filters.filterMonth || getCurrentMonth();
+    const [year, month] = activeMonth.split('-');
+    
+    try {
+      const submission = await api.get(
+        `/timesheet-submissions/by-user-month?userId=${currentUser.id}&year=${year}&month=${month}`
+      );
+      setCurrentMonthSubmission(submission.data);
+    } catch (error: any) {
+      // Se não encontrou submission, não há problema
+      if (error.response?.status === 404) {
+        setCurrentMonthSubmission(null);
+      } else {
+        console.error('Erro ao buscar submission:', error);
+      }
+    }
+  };
+
+  // Verifica se o mês está bloqueado (já foi enviado para aprovação)
+  const isMonthLocked = useMemo(() => {
+    if (!isConsultant || !currentMonthSubmission) return false;
+    // Bloqueia se o status for SUBMITTED, CHANGES_REQUESTED ou APPROVED
+    return ['SUBMITTED', 'CHANGES_REQUESTED', 'APPROVED'].includes(currentMonthSubmission.status);
+  }, [currentMonthSubmission, isConsultant]);
+
+  // Verifica se um lançamento está bloqueado (tem submissionId)
+  const isEntryLocked = (entry: TimesheetEntry): boolean => {
+    if (!isConsultant) return false;
+    return !!entry.submissionId;
   };
 
   const handleCreate = () => {
@@ -207,6 +251,12 @@ export const TimesheetEntries = () => {
   };
 
   const handleEdit = (entry: TimesheetEntry) => {
+    // Verifica se o lançamento está bloqueado
+    if (isEntryLocked(entry)) {
+      alert('Este lançamento não pode ser editado pois o mês já foi enviado para aprovação');
+      return;
+    }
+    
     // CONSULTANT só pode editar seus próprios lançamentos
     if (isConsultant && entry.userId !== currentUser?.id) {
       alert('Você não tem permissão para editar este lançamento');
@@ -228,6 +278,12 @@ export const TimesheetEntries = () => {
   };
 
   const handleDelete = async (entry: TimesheetEntry) => {
+    // Verifica se o lançamento está bloqueado
+    if (isEntryLocked(entry)) {
+      alert('Este lançamento não pode ser excluído pois o mês já foi enviado para aprovação');
+      return;
+    }
+    
     // CONSULTANT só pode excluir seus próprios lançamentos
     if (isConsultant && entry.userId !== currentUser?.id) {
       alert('Você não tem permissão para excluir este lançamento');
@@ -418,6 +474,7 @@ export const TimesheetEntries = () => {
       alert('Solicitação de aprovação enviada com sucesso!');
       setRequestApprovalModal({ isOpen: false });
       fetchData();
+      fetchCurrentMonthSubmission(); // Atualiza o submission após enviar
     } catch (error: any) {
       console.error('Erro ao solicitar aprovação:', error);
       alert(error.response?.data?.message || 'Erro ao solicitar aprovação');
@@ -425,6 +482,12 @@ export const TimesheetEntries = () => {
   };
 
   const handleDuplicate = (entry: TimesheetEntry) => {
+    // Verifica se o lançamento está bloqueado
+    if (isEntryLocked(entry)) {
+      alert('Este lançamento não pode ser duplicado pois o mês já foi enviado para aprovação');
+      return;
+    }
+    
     // CONSULTANT só pode duplicar seus próprios lançamentos
     if (isConsultant && entry.userId !== currentUser?.id) {
       alert('Você não tem permissão para duplicar este lançamento');
@@ -512,6 +575,15 @@ export const TimesheetEntries = () => {
 
   // Handlers para seleção múltipla
   const handleSelectEntry = (id: string, selected: boolean) => {
+    // Verifica se o lançamento está bloqueado antes de permitir seleção
+    if (selected) {
+      const entry = allVisibleEntries.find((e) => e.id === id);
+      if (entry && isEntryLocked(entry)) {
+        alert('Este lançamento não pode ser selecionado pois o mês já foi enviado para aprovação');
+        return;
+      }
+    }
+    
     setSelectedEntries((prev) => {
       const newSet = new Set(prev);
       if (selected) {
@@ -524,16 +596,18 @@ export const TimesheetEntries = () => {
   };
 
   const handleSelectAllVisible = () => {
-    const allIds = new Set(allVisibleEntries.map((entry) => entry.id));
-    const allSelected = allVisibleEntries.length > 0 && 
-      allVisibleEntries.every((entry) => selectedEntries.has(entry.id));
+    // Filtra apenas os entries que não estão bloqueados
+    const selectableEntries = allVisibleEntries.filter((entry) => !isEntryLocked(entry));
+    const selectableIds = new Set(selectableEntries.map((entry) => entry.id));
+    const allSelected = selectableEntries.length > 0 && 
+      selectableEntries.every((entry) => selectedEntries.has(entry.id));
     
     if (allSelected) {
       // Se todos estão selecionados, desmarca todos
       setSelectedEntries(new Set());
     } else {
-      // Seleciona todos os visíveis
-      setSelectedEntries(allIds);
+      // Seleciona apenas os que não estão bloqueados
+      setSelectedEntries(selectableIds);
     }
   };
 
@@ -573,13 +647,22 @@ export const TimesheetEntries = () => {
   }, [entries]);
 
   const formatDateHeader = (dateString: string) => {
-    const date = new Date(dateString);
+    // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
+    const dateOnly = dateString.split('T')[0];
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    
+    // Cria a data usando o timezone local para evitar problemas de conversão
+    const date = new Date(year, month - 1, day);
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Zera as horas para comparação
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    const isToday = date.toDateString() === today.toDateString();
-    const isYesterday = date.toDateString() === yesterday.toDateString();
+    const dateForComparison = new Date(year, month - 1, day);
+    dateForComparison.setHours(0, 0, 0, 0);
+
+    const isToday = dateForComparison.getTime() === today.getTime();
+    const isYesterday = dateForComparison.getTime() === yesterday.getTime();
 
     const dayName = date.toLocaleDateString('pt-BR', { weekday: 'long' });
     const formattedDate = date.toLocaleDateString('pt-BR', {
@@ -742,7 +825,9 @@ export const TimesheetEntries = () => {
           {isConsultant && (
             <button
               onClick={() => setRequestApprovalModal({ isOpen: true })}
-              className="btn-primary text-sm"
+              disabled={isMonthLocked}
+              className={`btn-primary text-sm ${isMonthLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={isMonthLocked ? 'Este mês já foi enviado para aprovação' : ''}
             >
               Solicitar Aprovação
             </button>
@@ -796,6 +881,15 @@ export const TimesheetEntries = () => {
               )}
               <button
                 onClick={() => {
+                  // Verifica se há lançamentos bloqueados antes de abrir o modal
+                  const selectedEntriesList = allVisibleEntries.filter((e) => selectedEntries.has(e.id));
+                  const lockedEntries = selectedEntriesList.filter((e) => isEntryLocked(e));
+                  
+                  if (lockedEntries.length > 0) {
+                    alert(`Não é possível excluir ${lockedEntries.length} lançamento(s) pois o mês já foi enviado para aprovação.`);
+                    return;
+                  }
+                  
                   setBulkActionModal({
                     isOpen: true,
                     action: 'delete',
@@ -914,8 +1008,11 @@ export const TimesheetEntries = () => {
                 selectable={true}
                 selectedIds={selectedEntries}
                 onSelect={handleSelectEntry}
+                isItemDisabled={isEntryLocked}
                 onSelectAll={(selected) => {
-                  const dayEntryIds = new Set(dayEntries.map((e) => e.id));
+                  // Filtra apenas os entries que não estão bloqueados
+                  const selectableDayEntries = dayEntries.filter((e) => !isEntryLocked(e));
+                  const dayEntryIds = new Set(selectableDayEntries.map((e) => e.id));
                   setSelectedEntries((prev) => {
                     const newSet = new Set(prev);
                     if (selected) {
@@ -1138,6 +1235,16 @@ export const TimesheetEntries = () => {
                       )
                     );
                   } else if (bulkActionModal.action === 'delete') {
+                    // Verifica se há lançamentos bloqueados antes de excluir
+                    const selectedEntriesList = allVisibleEntries.filter((e) => selectedEntries.has(e.id));
+                    const lockedEntries = selectedEntriesList.filter((e) => isEntryLocked(e));
+                    
+                    if (lockedEntries.length > 0) {
+                      alert(`Não é possível excluir ${lockedEntries.length} lançamento(s) pois o mês já foi enviado para aprovação.`);
+                      setBulkActionModal({ isOpen: false, action: null, message: '' });
+                      return;
+                    }
+                    
                     await Promise.all(
                       Array.from(selectedEntries).map((id) => api.delete(`/timesheet-entries/${id}`))
                     );
@@ -1181,7 +1288,12 @@ export const TimesheetEntries = () => {
                   <strong>Projeto:</strong> {statusChangeModal.entry.project?.name || '-'}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
-                  <strong>Data:</strong> {new Date(statusChangeModal.entry.date).toLocaleDateString('pt-BR')}
+                  <strong>Data:</strong> {(() => {
+                    const dateOnly = statusChangeModal.entry.date.split('T')[0];
+                    const [year, month, day] = dateOnly.split('-').map(Number);
+                    const date = new Date(year, month - 1, day);
+                    return date.toLocaleDateString('pt-BR');
+                  })()}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
                   <strong>Horas:</strong> {decimalToTime(statusChangeModal.entry.hours)}
@@ -1255,7 +1367,12 @@ export const TimesheetEntries = () => {
                   <strong>Projeto:</strong> {statusDescriptionModal.entry.project?.name || '-'}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
-                  <strong>Data:</strong> {new Date(statusDescriptionModal.entry.date).toLocaleDateString('pt-BR')}
+                  <strong>Data:</strong> {(() => {
+                    const dateOnly = statusDescriptionModal.entry.date.split('T')[0];
+                    const [year, month, day] = dateOnly.split('-').map(Number);
+                    const date = new Date(year, month - 1, day);
+                    return date.toLocaleDateString('pt-BR');
+                  })()}
                 </p>
                 <p className="text-sm text-secondary-700 mt-1">
                   <strong>Horas:</strong> {decimalToTime(statusDescriptionModal.entry.hours)}
