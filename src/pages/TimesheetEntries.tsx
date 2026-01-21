@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '../config/api';
-import { TimesheetEntry, User, Project, TimesheetStatus, UserRole } from '../types';
+import { TimesheetEntry, User, Project, TimesheetStatus, UserRole, TimesheetSubmission, SubmissionStatus } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Select, Textarea } from '../components/Input';
@@ -59,6 +59,16 @@ const getCurrentMonth = (): string => {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
+};
+
+// Função para obter o primeiro e último dia do mês
+const getPeriodDates = (year: number, month: number): { periodStart: string; periodEnd: string } => {
+  const periodStart = new Date(year, month - 1, 1);
+  const periodEnd = new Date(year, month, 0, 23, 59, 59, 999); // Último dia do mês
+  return {
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+  };
 };
 
 const baseTimesheetEntrySchema = {
@@ -129,7 +139,7 @@ export const TimesheetEntries = () => {
   }>({
     isOpen: false,
   });
-  const [currentMonthSubmission, setCurrentMonthSubmission] = useState<any>(null);
+  const [currentMonthSubmission, setCurrentMonthSubmission] = useState<TimesheetSubmission | null>(null);
   
   // Filtros persistentes - sempre inicia com o mês atual
   const [filters, setFilters] = useFilters('timesheetEntries', {
@@ -249,14 +259,36 @@ export const TimesheetEntries = () => {
       return false;
     }
     
-    // Bloqueia se o status for SUBMITTED, CHANGES_REQUESTED ou APPROVED
-    return ['SUBMITTED', 'CHANGES_REQUESTED', 'APPROVED'].includes(currentMonthSubmission.status);
+    // Permite solicitar aprovação novamente se o status for CHANGES_REQUESTED (após rejeição)
+    // Bloqueia apenas se o status for SUBMITTED, IN_REVIEW ou APPROVED
+    if (currentMonthSubmission.status === SubmissionStatus.CHANGES_REQUESTED) {
+      return false; // Libera o botão quando o status é CHANGES_REQUESTED
+    }
+    
+    return ['SUBMITTED', 'IN_REVIEW', 'APPROVED'].includes(currentMonthSubmission.status);
   }, [currentMonthSubmission, isConsultant, filters.filterMonth]);
 
   // Verifica se um lançamento está bloqueado (tem submissionId)
   const isEntryLocked = (entry: TimesheetEntry): boolean => {
     if (!isConsultant) return false;
-    return !!entry.submissionId;
+    
+    // Se não tem submissionId, não está bloqueado
+    if (!entry.submissionId) {
+      return false;
+    }
+    
+    // Se tem submissionId, verifica o status da submission do mês atual
+    if (currentMonthSubmission && currentMonthSubmission.id === entry.submissionId) {
+      // Se o status da submission for CHANGES_REQUESTED, permite edição
+      if (currentMonthSubmission.status === SubmissionStatus.CHANGES_REQUESTED) {
+        return false;
+      }
+      // Se for SUBMITTED, IN_REVIEW ou APPROVED, bloqueia
+      return ['SUBMITTED', 'IN_REVIEW', 'APPROVED'].includes(currentMonthSubmission.status);
+    }
+    
+    // Se não encontrou a submission do mês atual, mas tem submissionId, bloqueia por segurança
+    return true;
   };
 
   const handleCreate = () => {
@@ -394,8 +426,17 @@ export const TimesheetEntries = () => {
       }
 
       await api.patch(`/timesheet-entries/${statusChangeModal.entry.id}`, payload);
+      
+      // Se o entry tem submissionId e foi aprovado/rejeitado, atualiza o status da submission
+      if (statusChangeModal.entry.submissionId && 
+          (statusChangeModal.newStatus === TimesheetStatus.APPROVED || 
+           statusChangeModal.newStatus === TimesheetStatus.REJECTED)) {
+        await updateSubmissionStatus(statusChangeModal.entry.submissionId);
+      }
+      
       setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
       fetchData();
+      fetchCurrentMonthSubmission(); // Atualiza o submission após mudança
     } catch (error: any) {
       console.error('Erro ao alterar status:', error);
       alert(error.response?.data?.message || 'Erro ao alterar status');
@@ -409,6 +450,58 @@ export const TimesheetEntries = () => {
     setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
     // Recarrega os dados para restaurar o valor original do select
     fetchData();
+  };
+
+  // Função para atualizar o status da submission baseado nos entries
+  const updateSubmissionStatus = async (submissionId: string) => {
+    try {
+      // Busca a submission com todos os entries
+      const submission = await api.get(`/timesheet-submissions/${submissionId}`);
+      const submissionData = submission.data;
+
+      if (!submissionData || !submissionData.entries || submissionData.entries.length === 0) {
+        return;
+      }
+
+      const entries = submissionData.entries;
+      
+      // Verifica os status dos entries
+      const hasRejected = entries.some((e: TimesheetEntry) => e.status === TimesheetStatus.REJECTED);
+      const allApproved = entries.every((e: TimesheetEntry) => e.status === TimesheetStatus.APPROVED);
+      const hasPending = entries.some((e: TimesheetEntry) => e.status === TimesheetStatus.PENDING);
+
+      // Determina o novo status da submission
+      let newStatus: SubmissionStatus;
+      
+      if (hasRejected) {
+        // Se algum entry foi rejeitado, muda para CHANGES_REQUESTED
+        newStatus = SubmissionStatus.CHANGES_REQUESTED;
+      } else if (allApproved) {
+        // Se todos foram aprovados, muda para APPROVED
+        newStatus = SubmissionStatus.APPROVED;
+      } else if (hasPending) {
+        // Se ainda há pendentes, mantém como SUBMITTED ou IN_REVIEW
+        const currentStatus = submissionData.status;
+        if (currentStatus === SubmissionStatus.SUBMITTED || currentStatus === SubmissionStatus.IN_REVIEW) {
+          return; // Não altera o status
+        }
+        newStatus = SubmissionStatus.SUBMITTED;
+      } else {
+        // Caso padrão: mantém como SUBMITTED
+        newStatus = SubmissionStatus.SUBMITTED;
+      }
+
+      // Atualiza o status da submission apenas se mudou
+      if (newStatus !== submissionData.status) {
+        await api.patch(`/timesheet-submissions/${submissionId}`, {
+          status: newStatus,
+          decidedAt: new Date().toISOString(),
+        });
+      }
+    } catch (error: any) {
+      console.error('Erro ao atualizar status da submission:', error);
+      // Não mostra erro para o usuário, apenas loga
+    }
   };
 
   // Calcula o total de horas do mês selecionado para o consultor
@@ -469,10 +562,13 @@ export const TimesheetEntries = () => {
         submissionId = updatedSubmission.data.id;
       } else {
         // Cria um novo submission
+        const { periodStart, periodEnd } = getPeriodDates(yearNum, monthNum);
         const newSubmission = await api.post('/timesheet-submissions', {
           userId: currentUser.id,
           year: yearNum,
           month: monthNum,
+          periodStart,
+          periodEnd,
           status: 'SUBMITTED',
           submittedAt: new Date().toISOString(),
         });
@@ -1247,6 +1343,19 @@ export const TimesheetEntries = () => {
                         })
                       )
                     );
+                    
+                    // Atualiza o status das submissions afetadas
+                    const selectedEntriesList = allVisibleEntries.filter((e) => selectedEntries.has(e.id));
+                    const uniqueSubmissionIds = new Set(
+                      selectedEntriesList
+                        .filter((e) => e.submissionId)
+                        .map((e) => e.submissionId!)
+                    );
+                    await Promise.all(
+                      Array.from(uniqueSubmissionIds).map((submissionId) =>
+                        updateSubmissionStatus(submissionId)
+                      )
+                    );
                   } else if (bulkActionModal.action === 'reject') {
                     await Promise.all(
                       Array.from(selectedEntries).map((id) =>
@@ -1256,6 +1365,19 @@ export const TimesheetEntries = () => {
                           approverId: currentUser?.id,
                           approvedAt: new Date().toISOString(),
                         })
+                      )
+                    );
+                    
+                    // Atualiza o status das submissions afetadas
+                    const selectedEntriesList = allVisibleEntries.filter((e) => selectedEntries.has(e.id));
+                    const uniqueSubmissionIds = new Set(
+                      selectedEntriesList
+                        .filter((e) => e.submissionId)
+                        .map((e) => e.submissionId!)
+                    );
+                    await Promise.all(
+                      Array.from(uniqueSubmissionIds).map((submissionId) =>
+                        updateSubmissionStatus(submissionId)
                       )
                     );
                   } else if (bulkActionModal.action === 'delete') {
@@ -1276,6 +1398,7 @@ export const TimesheetEntries = () => {
                   setSelectedEntries(new Set());
                   setBulkActionModal({ isOpen: false, action: null, message: '' });
                   fetchData();
+                  fetchCurrentMonthSubmission(); // Atualiza o submission após mudança
                 } catch (error: any) {
                   console.error(`Erro ao ${bulkActionModal.action} lançamentos:`, error);
                   alert(

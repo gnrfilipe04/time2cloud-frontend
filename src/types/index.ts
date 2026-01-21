@@ -17,6 +17,24 @@ export enum InvoiceStatus {
   REJECTED = 'REJECTED',
 }
 
+export enum SubmissionStatus {
+  DRAFT = 'DRAFT',
+  SUBMITTED = 'SUBMITTED',
+  IN_REVIEW = 'IN_REVIEW',
+  CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+  APPROVED = 'APPROVED',
+}
+
+export enum ClosingType {
+  TYPE_1 = 'TYPE_1',
+  TYPE_2 = 'TYPE_2',
+}
+
+export enum ApprovalFlowType {
+  FLOW_TYPE_1 = 'FLOW_TYPE_1',
+  FLOW_TYPE_2 = 'FLOW_TYPE_2',
+}
+
 export interface User {
   id: string;
   name: string;
@@ -100,6 +118,24 @@ export interface TimesheetEntry {
   user?: User;
   project?: Project;
   approver?: User;
+}
+
+export interface TimesheetSubmission {
+  id: string;
+  userId: string;
+  year: number;
+  month: number;
+  status: SubmissionStatus;
+  periodStart: string;
+  periodEnd: string;
+  closingType: ClosingType;
+  flowType: ApprovalFlowType;
+  submittedAt?: string;
+  decidedAt?: string;
+  approverId?: string;
+  comment?: string;
+  user?: User;
+  entries?: TimesheetEntry[];
 }
 
 export interface Invoice {
