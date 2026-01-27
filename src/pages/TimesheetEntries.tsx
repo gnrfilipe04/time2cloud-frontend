@@ -431,7 +431,11 @@ export const TimesheetEntries = () => {
       if (statusChangeModal.entry.submissionId && 
           (statusChangeModal.newStatus === TimesheetStatus.APPROVED || 
            statusChangeModal.newStatus === TimesheetStatus.REJECTED)) {
-        await updateSubmissionStatus(statusChangeModal.entry.submissionId);
+        await updateSubmissionStatus(
+          statusChangeModal.entry.submissionId,
+          statusChangeModal.newStatus === TimesheetStatus.APPROVED,
+          statusChangeModal.message
+        );
       }
       
       setStatusChangeModal({ isOpen: false, entry: null, newStatus: null, message: '' });
@@ -453,9 +457,9 @@ export const TimesheetEntries = () => {
   };
 
   // Função para atualizar o status da submission baseado nos entries
-  const updateSubmissionStatus = async (submissionId: string) => {
+  const updateSubmissionStatus = async (submissionId: string, isApproved?: boolean, message?: string) => {
     try {
-      // Busca a submission com todos os entries
+      // Busca a submission com todos os entries e steps
       const submission = await api.get(`/timesheet-submissions/${submissionId}`);
       const submissionData = submission.data;
 
@@ -464,8 +468,22 @@ export const TimesheetEntries = () => {
       }
 
       const entries = submissionData.entries;
+      const steps = submissionData.steps || [];
       
-      // Verifica os status dos entries
+      // Busca o step ativo
+      const activeStep = steps.find((step: any) => step.status === 'ACTIVE');
+      
+      // Se há step ativo e foi especificado se aprovou ou rejeitou, atualiza os steps
+      if (activeStep && isApproved !== undefined && currentUser?.id) {
+        await api.patch(`/timesheet-submissions/${submissionId}/update-steps`, {
+          approverId: currentUser.id,
+          isApproved,
+          comment: message,
+        });
+        return;
+      }
+
+      // Lógica antiga para compatibilidade (quando não há steps ou não foi especificado aprovado/rejeitado)
       const hasRejected = entries.some((e: TimesheetEntry) => e.status === TimesheetStatus.REJECTED);
       const allApproved = entries.every((e: TimesheetEntry) => e.status === TimesheetStatus.APPROVED);
       const hasPending = entries.some((e: TimesheetEntry) => e.status === TimesheetStatus.PENDING);
@@ -1353,7 +1371,7 @@ export const TimesheetEntries = () => {
                     );
                     await Promise.all(
                       Array.from(uniqueSubmissionIds).map((submissionId) =>
-                        updateSubmissionStatus(submissionId)
+                        updateSubmissionStatus(submissionId, true, bulkActionModal.message)
                       )
                     );
                   } else if (bulkActionModal.action === 'reject') {
@@ -1377,7 +1395,7 @@ export const TimesheetEntries = () => {
                     );
                     await Promise.all(
                       Array.from(uniqueSubmissionIds).map((submissionId) =>
-                        updateSubmissionStatus(submissionId)
+                        updateSubmissionStatus(submissionId, false, bulkActionModal.message)
                       )
                     );
                   } else if (bulkActionModal.action === 'delete') {

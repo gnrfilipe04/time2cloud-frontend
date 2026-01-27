@@ -35,6 +35,21 @@ export enum ApprovalFlowType {
   FLOW_TYPE_2 = 'FLOW_TYPE_2',
 }
 
+export enum ApprovalStage {
+  PROJECT_MANAGER = 'PROJECT_MANAGER',
+  COMPANY_MANAGER = 'COMPANY_MANAGER',
+  HR = 'HR',
+  FINANCE = 'FINANCE',
+}
+
+export enum StepStatus {
+  PENDING = 'PENDING',
+  ACTIVE = 'ACTIVE',
+  APPROVED = 'APPROVED',
+  CHANGES_REQUESTED = 'CHANGES_REQUESTED',
+  REJECTED = 'REJECTED',
+}
+
 export interface User {
   id: string;
   name: string;
@@ -120,6 +135,18 @@ export interface TimesheetEntry {
   approver?: User;
 }
 
+export interface TimesheetApprovalStep {
+  id: string;
+  order: number;
+  stage: ApprovalStage;
+  status: StepStatus;
+  comment?: string;
+  decidedAt?: string;
+  submissionId: string;
+  approverId?: string;
+  approver?: User;
+}
+
 export interface TimesheetSubmission {
   id: string;
   userId: string;
@@ -136,6 +163,7 @@ export interface TimesheetSubmission {
   comment?: string;
   user?: User;
   entries?: TimesheetEntry[];
+  steps?: TimesheetApprovalStep[];
 }
 
 export interface Invoice {
