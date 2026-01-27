@@ -31,8 +31,8 @@ export const Dashboard = () => {
           );
         }
 
-        // ADMIN e PROJECT_MANAGER podem ver clientes
-        if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER) {
+        // ADMIN e gestores (PROJECT_MANAGER, PEOPLE_MANAGER, COMPANY_MANAGER) podem ver clientes
+        if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER || user?.role === UserRole.PEOPLE_MANAGER || user?.role === UserRole.COMPANY_MANAGER) {
           requests.push(
             api.get('/clients').then((res) => {
               statsData.clients = res.data.length;
@@ -42,8 +42,8 @@ export const Dashboard = () => {
           );
         }
 
-        // ADMIN e PROJECT_MANAGER podem ver projetos
-        if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER) {
+        // ADMIN e gestores podem ver projetos
+        if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER || user?.role === UserRole.PEOPLE_MANAGER || user?.role === UserRole.COMPANY_MANAGER) {
           requests.push(
             api.get('/projects').then((res) => {
               statsData.projects = res.data.length;
@@ -53,10 +53,12 @@ export const Dashboard = () => {
           );
         }
 
-        // ADMIN, PROJECT_MANAGER e CONSULTANT podem ver lançamentos
+        // ADMIN, gestores e CONSULTANT podem ver lançamentos
         if (
           user?.role === UserRole.ADMIN ||
           user?.role === UserRole.PROJECT_MANAGER ||
+          user?.role === UserRole.PEOPLE_MANAGER ||
+          user?.role === UserRole.COMPANY_MANAGER ||
           user?.role === UserRole.CONSULTANT
         ) {
           requests.push(
@@ -127,7 +129,7 @@ export const Dashboard = () => {
       );
     }
 
-    if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER) {
+    if (user?.role === UserRole.ADMIN || user?.role === UserRole.PROJECT_MANAGER || user?.role === UserRole.PEOPLE_MANAGER || user?.role === UserRole.COMPANY_MANAGER) {
       cards.push(
         <div key="clients" className="card hover:shadow-lg transition-shadow">
           <div className="flex items-center">
@@ -164,6 +166,8 @@ export const Dashboard = () => {
     if (
       user?.role === UserRole.ADMIN ||
       user?.role === UserRole.PROJECT_MANAGER ||
+      user?.role === UserRole.PEOPLE_MANAGER ||
+      user?.role === UserRole.COMPANY_MANAGER ||
       user?.role === UserRole.CONSULTANT
     ) {
       cards.push(

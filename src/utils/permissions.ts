@@ -6,11 +6,14 @@ export interface RoutePermission {
   roles: UserRole[];
 }
 
+/** Perfis com mesma visão e permissões de PROJECT_MANAGER (gestores) */
+const MANAGER_ROLES = [UserRole.PROJECT_MANAGER, UserRole.PEOPLE_MANAGER, UserRole.COMPANY_MANAGER];
+
 export const routePermissions: RoutePermission[] = [
   {
     path: '/dashboard',
     label: 'Dashboard',
-    roles: [UserRole.ADMIN, UserRole.PROJECT_MANAGER, UserRole.FINANCE, UserRole.CONSULTANT],
+    roles: [UserRole.ADMIN, ...MANAGER_ROLES, UserRole.FINANCE, UserRole.CONSULTANT],
   },
   {
     path: '/users',
@@ -20,7 +23,7 @@ export const routePermissions: RoutePermission[] = [
   {
     path: '/clients',
     label: 'Clientes',
-    roles: [UserRole.ADMIN, UserRole.PROJECT_MANAGER],
+    roles: [UserRole.ADMIN, ...MANAGER_ROLES],
   },
   {
     path: '/companies',
@@ -30,17 +33,17 @@ export const routePermissions: RoutePermission[] = [
   {
     path: '/projects',
     label: 'Projetos',
-    roles: [UserRole.ADMIN, UserRole.PROJECT_MANAGER],
+    roles: [UserRole.ADMIN, ...MANAGER_ROLES],
   },
   {
     path: '/project-assignments',
     label: 'Atribuições',
-    roles: [UserRole.ADMIN, UserRole.PROJECT_MANAGER],
+    roles: [UserRole.ADMIN, ...MANAGER_ROLES],
   },
   {
     path: '/timesheet-entries',
     label: 'Lançamentos',
-    roles: [UserRole.ADMIN, UserRole.PROJECT_MANAGER, UserRole.CONSULTANT],
+    roles: [UserRole.ADMIN, ...MANAGER_ROLES, UserRole.CONSULTANT],
   },
   {
     path: '/invoices',
@@ -50,7 +53,7 @@ export const routePermissions: RoutePermission[] = [
   {
     path: '/function-roles',
     label: 'Funções',
-    roles: [UserRole.ADMIN, UserRole.PROJECT_MANAGER],
+    roles: [UserRole.ADMIN, ...MANAGER_ROLES],
   },
 ];
 

@@ -163,6 +163,8 @@ export const TimesheetEntries = () => {
 
   const isConsultant = currentUser?.role === UserRole.CONSULTANT;
   const isAdmin = currentUser?.role === UserRole.ADMIN;
+  /** Qualquer perfil que não seja somente consultor pode aprovar/reprovar lançamentos */
+  const canApproveOrReject = !isConsultant;
 
   const {
     register,
@@ -819,7 +821,7 @@ export const TimesheetEntries = () => {
   };
 
   const columns = [
-    ...(isAdmin ? [{
+    ...(canApproveOrReject ? [{
       key: 'user',
       label: 'Usuário',
       width: '150px',
@@ -852,7 +854,7 @@ export const TimesheetEntries = () => {
       width: '180px',
       wrap: false,
       render: (entry: TimesheetEntry) => {
-        if (isAdmin) {
+        if (canApproveOrReject) {
           return (
             <select
               className="input-base text-sm py-1"
@@ -989,7 +991,7 @@ export const TimesheetEntries = () => {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              {isAdmin && (
+              {canApproveOrReject && (
                 <>
                   <button
                     onClick={() => {
