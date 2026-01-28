@@ -58,6 +58,7 @@ export interface User {
   email: string;
   role: UserRole;
   contractType?: string;
+  closingPolicyId?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

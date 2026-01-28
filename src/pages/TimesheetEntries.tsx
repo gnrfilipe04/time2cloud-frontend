@@ -573,15 +573,16 @@ export const TimesheetEntries = () => {
 
       let submissionId: string;
       
+      const submissionPayload = {
+        status: 'SUBMITTED' as const,
+        submittedAt: new Date().toISOString(),
+        ...(currentUser.closingPolicyId && { closingPolicyId: currentUser.closingPolicyId }),
+      };
+
       if (submission) {
-        // Atualiza o submission existente
-        const updatedSubmission = await api.patch(`/timesheet-submissions/${submission.id}`, {
-          status: 'SUBMITTED',
-          submittedAt: new Date().toISOString(),
-        });
+        const updatedSubmission = await api.patch(`/timesheet-submissions/${submission.id}`, submissionPayload);
         submissionId = updatedSubmission.data.id;
       } else {
-        // Cria um novo submission
         const { periodStart, periodEnd } = getPeriodDates(yearNum, monthNum);
         const newSubmission = await api.post('/timesheet-submissions', {
           userId: currentUser.id,
@@ -589,8 +590,7 @@ export const TimesheetEntries = () => {
           month: monthNum,
           periodStart,
           periodEnd,
-          status: 'SUBMITTED',
-          submittedAt: new Date().toISOString(),
+          ...submissionPayload,
         });
         submissionId = newSubmission.data.id;
       }
