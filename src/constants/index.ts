@@ -1,5 +1,4 @@
 import { TimesheetStatus } from "../types";
-import { ApprovalStage, StepStatus } from "../types";
 
 export const statusColors: Record<TimesheetStatus, string> = {
     [TimesheetStatus.PENDING]: 'text-yellow-500 bg-yellow-400/10 inset-ring-yellow-400/20' ,
@@ -12,18 +11,3 @@ export const statusTexts: Record<TimesheetStatus, string> = {
     [TimesheetStatus.APPROVED]: 'Aprovado',
     [TimesheetStatus.REJECTED]: 'Rejeitado',
   };
-
-export const approvalStageLabels: Record<ApprovalStage, string> = {
-  [ApprovalStage.PROJECT_MANAGER]: 'Gestor de Projeto',
-  [ApprovalStage.COMPANY_MANAGER]: 'Gestor da Empresa',
-  [ApprovalStage.PEOPLE_MANAGER]: 'Gestor de Pessoas',
-  [ApprovalStage.FINANCE]: 'Financeiro',
-};
-
-export const stepStatusLabels: Record<StepStatus, string> = {
-  [StepStatus.PENDING]: 'Pendente',
-  [StepStatus.ACTIVE]: 'Em análise',
-  [StepStatus.APPROVED]: 'Aprovado',
-  [StepStatus.CHANGES_REQUESTED]: 'Alterações solicitadas',
-  [StepStatus.REJECTED]: 'Rejeitado',
-};
