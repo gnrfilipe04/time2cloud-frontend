@@ -3,12 +3,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '../config/api';
-import { TimesheetEntry, User, Project, TimesheetStatus, UserRole, TimesheetSubmission, SubmissionStatus } from '../types';
+import { TimesheetEntry, User, Project, TimesheetStatus, UserRole, TimesheetSubmission, SubmissionStatus, ApprovalStage } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input, Select, Textarea } from '../components/Input';
 import { SelectSearchable } from '../components/SelectSearchable';
-import { statusColors, statusTexts } from '../constants';
+import { statusColors, statusTexts, approvalStageLabels, stepStatusLabels } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../hooks/useFilters';
 
@@ -165,6 +165,16 @@ export const TimesheetEntries = () => {
   const isAdmin = currentUser?.role === UserRole.ADMIN;
   /** Qualquer perfil que não seja somente consultor pode aprovar/reprovar lançamentos */
   const canApproveOrReject = !isConsultant;
+
+  /** Mapeia o role do usuário logado para a etapa do fluxo (para exibir "sua aprovação") */
+  const currentUserApprovalStage: ApprovalStage | null = useMemo(() => {
+    if (!currentUser?.role) return null;
+    const role = currentUser.role as string;
+    if (['PROJECT_MANAGER', 'COMPANY_MANAGER', 'PEOPLE_MANAGER', 'FINANCE'].includes(role)) {
+      return role as ApprovalStage;
+    }
+    return null;
+  }, [currentUser?.role]);
 
   const {
     register,
@@ -662,10 +672,10 @@ export const TimesheetEntries = () => {
       return entryYear === year && entryMonth === month;
     });
 
+    if (canApproveOrReject && filters.filterUser) {
+      filtered = filtered.filter((e) => e.userId === filters.filterUser);
+    }
     if (isAdmin) {
-      if (filters.filterUser) {
-        filtered = filtered.filter((e) => e.userId === filters.filterUser);
-      }
       if (filters.filterProject) {
         filtered = filtered.filter((e) => e.projectId === filters.filterProject);
       }
@@ -675,8 +685,7 @@ export const TimesheetEntries = () => {
       if (filters.filterDate) {
         const filterDateKey = filters.filterDate; // Já vem no formato YYYY-MM-DD
         filtered = filtered.filter((e) => {
-          // Extrai apenas a parte da data (YYYY-MM-DD) para evitar problemas de fuso horário
-          const entryDateKey = e.date.split('T')[0]; // Remove a parte do tempo
+          const entryDateKey = e.date.split('T')[0];
           return entryDateKey === filterDateKey;
         });
       }
@@ -706,12 +715,25 @@ export const TimesheetEntries = () => {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         ),
       }));
-      }, [entries, filters, isAdmin, isConsultant, currentUser?.id]);
+      }, [entries, filters, isAdmin, isConsultant, canApproveOrReject, currentUser?.id]);
 
   // Obtém todos os lançamentos visíveis na tela
   const allVisibleEntries = useMemo(() => {
     return filteredAndGroupedEntries.flatMap(({ entries: dayEntries }) => dayEntries);
   }, [filteredAndGroupedEntries]);
+
+  // Submission representativa para exibir o workflow no topo (primeiro entry do mês com submission e steps)
+  const workflowSubmission = useMemo((): TimesheetSubmission | null => {
+    if (!canApproveOrReject || !filters.filterMonth) return null;
+    const [year, month] = filters.filterMonth.split('-');
+    const monthEntries = entries.filter((e) => {
+      const dateStr = e.date.split('T')[0];
+      const [ey, em] = dateStr.split('-');
+      return ey === year && em === month;
+    });
+    const withSubmission = monthEntries.find((e) => e.submission?.steps?.length);
+    return withSubmission?.submission ?? null;
+  }, [entries, filters.filterMonth, canApproveOrReject]);
 
   // Handlers para seleção múltipla
   const handleSelectEntry = (id: string, selected: boolean) => {
@@ -827,6 +849,45 @@ export const TimesheetEntries = () => {
       width: '150px',
       wrap: true,
       render: (entry: TimesheetEntry) => entry.user?.name || '-',
+    }] : []),
+    ...(canApproveOrReject && currentUserApprovalStage ? [{
+      key: 'approvalStatus',
+      label: 'Sua aprovação',
+      width: '120px',
+      wrap: false,
+      render: (entry: TimesheetEntry) => {
+        const step = entry.submission?.steps?.find((s: { stage: string }) => s.stage === currentUserApprovalStage);
+        if (!step) return <span className="text-secondary-400">-</span>;
+        const label = stepStatusLabels[step.status as keyof typeof stepStatusLabels] ?? step.status;
+        const colors: Record<string, string> = {
+          PENDING: 'text-secondary-600 bg-secondary-100',
+          ACTIVE: 'text-primary-700 bg-primary-100',
+          APPROVED: 'text-green-700 bg-green-100',
+          REJECTED: 'text-red-700 bg-red-100',
+          CHANGES_REQUESTED: 'text-amber-700 bg-amber-100',
+        };
+        return (
+          <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${colors[step.status] ?? 'bg-secondary-100'}`}>
+            {label}
+          </span>
+        );
+      },
+    }] : []),
+    ...(canApproveOrReject && !currentUserApprovalStage ? [{
+      key: 'approvalStatus',
+      label: 'Etapa atual',
+      width: '120px',
+      wrap: false,
+      render: (entry: TimesheetEntry) => {
+        const activeStep = entry.submission?.steps?.find((s: { status: string }) => s.status === 'ACTIVE');
+        if (!activeStep) return <span className="text-secondary-400">-</span>;
+        const stageLabel = approvalStageLabels[activeStep.stage as keyof typeof approvalStageLabels] ?? activeStep.stage;
+        return (
+          <span className="inline-flex rounded px-2 py-0.5 text-xs font-medium text-primary-700 bg-primary-100">
+            {stageLabel}: Em análise
+          </span>
+        );
+      },
     }] : []),
     {
       key: 'project',
@@ -949,6 +1010,112 @@ export const TimesheetEntries = () => {
         </div>
       )}
 
+      {/* Workflow de aprovação (somente para não-consultor) */}
+      {canApproveOrReject && workflowSubmission?.steps && workflowSubmission.steps.length > 0 && (
+        <div className="card mb-6">
+          <h3 className="text-sm font-semibold text-secondary-700 mb-3">Fluxo de aprovação</h3>
+          <div className="flex flex-wrap gap-3 items-center">
+            {workflowSubmission.steps
+              .slice()
+              .sort((a, b) => a.order - b.order)
+              .map((step, index) => (
+                <div key={step.id} className="flex items-center gap-2">
+                  {index > 0 && <span className="text-secondary-300">→</span>}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary-50 border border-secondary-200">
+                    <span className="text-sm font-medium text-secondary-800">
+                      {approvalStageLabels[step.stage as keyof typeof approvalStageLabels] ?? step.stage}
+                    </span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                      step.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                      step.status === 'ACTIVE' ? 'bg-primary-100 text-primary-800' :
+                      step.status === 'REJECTED' ? 'bg-red-100 text-red-800' :
+                      step.status === 'CHANGES_REQUESTED' ? 'bg-amber-100 text-amber-800' :
+                      'bg-secondary-200 text-secondary-700'
+                    }`}>
+                      {stepStatusLabels[step.status as keyof typeof stepStatusLabels] ?? step.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filtro por usuário (para não-consultor) */}
+      {canApproveOrReject && (
+        <div className="card mb-6">
+          <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <SelectSearchable
+              label="Usuário"
+              value={filters.filterUser}
+              onChange={(value) => setFilters({ ...filters, filterUser: value })}
+              options={[
+                { value: '', label: 'Todos os usuários' },
+                ...users.map((u) => ({ value: u.id, label: u.name })),
+              ]}
+              placeholder="Todos os usuários"
+            />
+            {isAdmin && (
+              <>
+                <SelectSearchable
+                  label="Projeto"
+                  value={filters.filterProject}
+                  onChange={(value) => setFilters({ ...filters, filterProject: value })}
+                  options={[
+                    { value: '', label: 'Todos os projetos' },
+                    ...projects.map((project) => ({ value: project.id, label: project.name })),
+                  ]}
+                  placeholder="Todos os projetos"
+                />
+                <div>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
+                  <select
+                    className="input-base"
+                    value={filters.filterStatus}
+                    onChange={(e) => setFilters({ ...filters, filterStatus: e.target.value })}
+                  >
+                    <option value="">Todos os status</option>
+                    {Object.values(TimesheetStatus).map((status) => (
+                      <option key={status} value={status}>
+                        {statusTexts[status]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-secondary-700 mb-1">Data</label>
+                  <input
+                    type="date"
+                    className="input-base"
+                    value={filters.filterDate}
+                    onChange={(e) => setFilters({ ...filters, filterDate: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          {(filters.filterUser || (isAdmin && (filters.filterProject || filters.filterStatus || filters.filterDate || filters.filterMonth !== getCurrentMonth()))) && (
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  setFilters({
+                    filterUser: '',
+                    filterProject: '',
+                    filterStatus: '',
+                    filterDate: '',
+                    filterMonth: getCurrentMonth(),
+                  });
+                }}
+                className="btn-secondary text-sm"
+              >
+                Limpar Filtros
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Botão Selecionar Todos e Solicitar Aprovação */}
       {allVisibleEntries.length > 0 && (
         <div className="mb-4 flex justify-end gap-2">
@@ -1042,77 +1209,6 @@ export const TimesheetEntries = () => {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Filtros para ADMIN */}
-      {isAdmin && (
-        <div className="card mb-6">
-          <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <SelectSearchable
-              label="Usuário"
-              value={filters.filterUser}
-              onChange={(value) => setFilters({ ...filters, filterUser: value })}
-              options={[
-                { value: '', label: 'Todos os usuários' },
-                ...users.map((user) => ({ value: user.id, label: user.name })),
-              ]}
-              placeholder="Todos os usuários"
-            />
-            <SelectSearchable
-              label="Projeto"
-              value={filters.filterProject}
-              onChange={(value) => setFilters({ ...filters, filterProject: value })}
-              options={[
-                { value: '', label: 'Todos os projetos' },
-                ...projects.map((project) => ({ value: project.id, label: project.name })),
-              ]}
-              placeholder="Todos os projetos"
-            />
-            <div>
-              <label className="block text-sm font-medium text-secondary-700 mb-1">Status</label>
-              <select
-                className="input-base"
-                value={filters.filterStatus}
-                onChange={(e) => setFilters({ ...filters, filterStatus: e.target.value })}
-              >
-                <option value="">Todos os status</option>
-                {Object.values(TimesheetStatus).map((status) => (
-                  <option key={status} value={status}>
-                    {statusTexts[status]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-secondary-700 mb-1">Data</label>
-              <input
-                type="date"
-                className="input-base"
-                value={filters.filterDate}
-                onChange={(e) => setFilters({ ...filters, filterDate: e.target.value })}
-              />
-            </div>
-          </div>
-          {(filters.filterUser || filters.filterProject || filters.filterStatus || filters.filterDate || filters.filterMonth !== getCurrentMonth()) && (
-            <div className="mt-4">
-              <button
-                onClick={() => {
-                  setFilters({
-                    filterUser: '',
-                    filterProject: '',
-                    filterStatus: '',
-                    filterDate: '',
-                    filterMonth: getCurrentMonth(), // Volta para o mês atual ao limpar
-                  });
-                }}
-                className="btn-secondary text-sm"
-              >
-                Limpar Filtros
-              </button>
-            </div>
-          )}
         </div>
       )}
 

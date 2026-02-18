@@ -131,6 +131,7 @@ export interface TimesheetEntry {
   approverId?: string;
   approvedAt?: string;
   submissionId?: string;
+  submission?: TimesheetSubmission;
   createdAt: string;
   updatedAt: string;
   user?: User;
