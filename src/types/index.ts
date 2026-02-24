@@ -32,6 +32,57 @@ export enum ClosingType {
   TYPE_2 = 'TYPE_2',
 }
 
+export enum ClosingRuleTarget {
+  TIMESHEET_ENTRY_CREATE = 'TIMESHEET_ENTRY_CREATE',
+  TIMESHEET_ENTRY_UPDATE = 'TIMESHEET_ENTRY_UPDATE',
+  TIMESHEET_ENTRY_DELETE = 'TIMESHEET_ENTRY_DELETE',
+  TIMESHEET_SUBMIT = 'TIMESHEET_SUBMIT',
+  INVOICE_UPLOAD = 'INVOICE_UPLOAD',
+  INVOICE_UPDATE = 'INVOICE_UPDATE',
+}
+
+export enum ClosingRuleEnforcement {
+  BLOCK = 'BLOCK',
+  WARN = 'WARN',
+}
+
+export interface ClosingInvalidDay {
+  id: string;
+  calendarId: string;
+  date: string;
+  reason?: string | null;
+}
+
+export interface ClosingDeadlineRule {
+  id: string;
+  calendarId: string;
+  target: ClosingRuleTarget;
+  deadlineAt: string;
+  enforcement: ClosingRuleEnforcement;
+  message?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClosingCalendar {
+  id: string;
+  closingType: ClosingType;
+  year: number;
+  month: number;
+  periodStart: string;
+  periodEnd: string;
+  entryDeadline?: string | null;
+  submitDeadline?: string | null;
+  note?: string | null;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  invalidDays?: ClosingInvalidDay[];
+  rules?: ClosingDeadlineRule[];
+  createdBy?: { id: string; name: string; email: string } | null;
+}
+
 export enum ApprovalFlowType {
   FLOW_TYPE_1 = 'FLOW_TYPE_1',
   FLOW_TYPE_2 = 'FLOW_TYPE_2',

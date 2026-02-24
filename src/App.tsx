@@ -13,6 +13,7 @@ import { ProjectAssignments } from './pages/ProjectAssignments';
 import { TimesheetEntries } from './pages/TimesheetEntries';
 import { Invoices } from './pages/Invoices';
 import { FunctionRoles } from './pages/FunctionRoles';
+import { ClosingCalendar } from './pages/ClosingCalendar';
 import { getAllowedRolesForPath } from './utils/permissions';
 
 function App() {
@@ -134,6 +135,18 @@ function App() {
                 <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/function-roles')}>
                   <Layout>
                     <FunctionRoles />
+                  </Layout>
+                </RoleProtectedRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/calendar"
+            element={
+              <ProtectedRoute>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/calendar')}>
+                  <Layout>
+                    <ClosingCalendar />
                   </Layout>
                 </RoleProtectedRoute>
               </ProtectedRoute>
