@@ -33,10 +33,21 @@ const ENFORCEMENT_LABELS: Record<ClosingRuleEnforcement, string> = {
   [ClosingRuleEnforcement.WARN]: 'Avisar',
 };
 
+/** Formata data em YYYY-MM-DD usando horário local (evita deslocamento por timezone) */
 function formatDateForInput(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
+/** Parse de string ISO ou YYYY-MM-DD para Date à meia-noite no fuso local (evita deslocamento UTC) */
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Grid do mês (1 a último dia do mês) — usado quando não há calendário carregado */
 function getMonthGrid(year: number, month: number): (Date | null)[][] {
   const first = new Date(year, month - 1, 1);
   const last = new Date(year, month, 0);
@@ -59,6 +70,31 @@ function getMonthGrid(year: number, month: number): (Date | null)[][] {
   return grid;
 }
 
+/** Grid do período (do dia inicial ao dia final), podendo atravessar dois meses. Usa datas locais. */
+function getPeriodGrid(periodStart: string, periodEnd: string): (Date | null)[][] {
+  const start = parseLocalDate(periodStart);
+  const end = parseLocalDate(periodEnd);
+  const grid: (Date | null)[][] = [];
+  let week: (Date | null)[] = [];
+  const pad = start.getDay();
+  for (let i = 0; i < pad; i++) week.push(null);
+  const current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  while (current <= end) {
+    week.push(new Date(current));
+    if (week.length === 7) {
+      grid.push(week);
+      week = [];
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  if (week.length) {
+    while (week.length < 7) week.push(null);
+    grid.push(week);
+  }
+  return grid;
+}
+
+/** Chave única do dia em horário local (YYYY-MM-DD) para comparação */
 function dateKey(d: Date): string {
   return formatDateForInput(d);
 }
@@ -105,10 +141,13 @@ export const ClosingCalendar = () => {
       );
       setCurrentCalendar(found ?? null);
       if (found) {
-        const toDateTimeLocal = (d: string) => new Date(d).toISOString().slice(0, 16);
+        const toDateTimeLocal = (d: string) => {
+          const x = new Date(d);
+          return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}T${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
+        };
         setConfigForm({
-          periodStart: found.periodStart ? formatDateForInput(new Date(found.periodStart)) : '',
-          periodEnd: found.periodEnd ? formatDateForInput(new Date(found.periodEnd)) : '',
+          periodStart: found.periodStart ? formatDateForInput(parseLocalDate(found.periodStart)) : '',
+          periodEnd: found.periodEnd ? formatDateForInput(parseLocalDate(found.periodEnd)) : '',
           entryDeadline: found.entryDeadline ? toDateTimeLocal(found.entryDeadline) : '',
           submitDeadline: found.submitDeadline ? toDateTimeLocal(found.submitDeadline) : '',
           note: found.note ?? '',
@@ -138,12 +177,16 @@ export const ClosingCalendar = () => {
   const invalidDaySet = useMemo(() => {
     const set = new Set<string>();
     currentCalendar?.invalidDays?.forEach((d) => {
-      set.add(dateKey(new Date(d.date)));
+      set.add(dateKey(parseLocalDate(d.date)));
     });
     return set;
   }, [currentCalendar?.invalidDays]);
 
-  const monthGrid = useMemo(() => getMonthGrid(year, month), [year, month]);
+  const calendarGrid = useMemo(() => {
+    if (currentCalendar)
+      return getPeriodGrid(currentCalendar.periodStart, currentCalendar.periodEnd);
+    return getMonthGrid(year, month);
+  }, [currentCalendar, year, month]);
 
   const saveOrCreateConfig = async () => {
     if (!configForm.periodStart || !configForm.periodEnd) return;
@@ -349,8 +392,8 @@ export const ClosingCalendar = () => {
                 <div>
                   <dt className="text-secondary-500">Período</dt>
                   <dd>
-                    {new Date(currentCalendar.periodStart).toLocaleDateString('pt-BR')} a{' '}
-                    {new Date(currentCalendar.periodEnd).toLocaleDateString('pt-BR')}
+                    {parseLocalDate(currentCalendar.periodStart).toLocaleDateString('pt-BR')} a{' '}
+                    {parseLocalDate(currentCalendar.periodEnd).toLocaleDateString('pt-BR')}
                   </dd>
                 </div>
                 {currentCalendar.entryDeadline && (
@@ -375,8 +418,11 @@ export const ClosingCalendar = () => {
             </div>
 
             <div className="card">
-              <h3 className="text-lg font-semibold text-secondary-700 mb-2">Calendário do mês</h3>
-              <p className="text-xs text-secondary-500 mb-2">Dias em destaque estão bloqueados para apontamentos.</p>
+              <h3 className="text-lg font-semibold text-secondary-700 mb-2">Calendário do período</h3>
+              <p className="text-xs text-secondary-500 mb-2">
+                Exibição de {parseLocalDate(currentCalendar.periodStart).toLocaleDateString('pt-BR')} a{' '}
+                {parseLocalDate(currentCalendar.periodEnd).toLocaleDateString('pt-BR')}. Dias em destaque estão bloqueados para apontamentos.
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm border-collapse">
                   <thead>
@@ -391,7 +437,7 @@ export const ClosingCalendar = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {monthGrid.map((week, wi) => (
+                    {calendarGrid.map((week, wi) => (
                       <tr key={wi}>
                         {week.map((day, di) => {
                           if (!day) return <td key={di} className="border border-neutral-100 p-1 bg-neutral-50" />;
@@ -440,13 +486,13 @@ export const ClosingCalendar = () => {
                       className="flex justify-between items-center py-2 border-b border-neutral-100 last:border-0"
                     >
                       <span>
-                        {new Date(d.date).toLocaleDateString('pt-BR')}
+                        {parseLocalDate(d.date).toLocaleDateString('pt-BR')}
                         {d.reason && <span className="text-secondary-500 ml-2">— {d.reason}</span>}
                       </span>
                       <button
                         type="button"
                         className="text-error-600 hover:text-error-700 text-sm"
-                        onClick={() => removeInvalidDay(dateKey(new Date(d.date)))}
+                        onClick={() => removeInvalidDay(dateKey(parseLocalDate(d.date)))}
                       >
                         Remover
                       </button>
