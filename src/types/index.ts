@@ -37,6 +37,7 @@ export enum ClosingRuleTarget {
   TIMESHEET_ENTRY_UPDATE = 'TIMESHEET_ENTRY_UPDATE',
   TIMESHEET_ENTRY_DELETE = 'TIMESHEET_ENTRY_DELETE',
   TIMESHEET_SUBMIT = 'TIMESHEET_SUBMIT',
+  TIMESHEET_APPROVE = 'TIMESHEET_APPROVE',
   INVOICE_UPLOAD = 'INVOICE_UPLOAD',
   INVOICE_UPDATE = 'INVOICE_UPDATE',
 }
@@ -61,6 +62,7 @@ export interface ClosingDeadlineRule {
   enforcement: ClosingRuleEnforcement;
   message?: string | null;
   isActive: boolean;
+  appliesToRole?: UserRole | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -3,11 +3,24 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '../config/api';
-import { TimesheetEntry, User, Project, TimesheetStatus, UserRole, TimesheetSubmission, SubmissionStatus } from '../types';
+import {
+  TimesheetEntry,
+  User,
+  Project,
+  TimesheetStatus,
+  UserRole,
+  TimesheetSubmission,
+  SubmissionStatus,
+  ClosingCalendar as ClosingCalendarType,
+  ClosingType,
+  ClosingRuleTarget,
+} from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { Calendar } from '../components/Calendar';
 import { Input, Select, Textarea } from '../components/Input';
 import { SelectSearchable } from '../components/SelectSearchable';
+import { MONTH_NAMES, dateKey, parseLocalDate, getLocalDateKey } from '../utils/calendar';
 import { statusColors, statusTexts } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../hooks/useFilters';
@@ -70,6 +83,174 @@ const getPeriodDates = (year: number, month: number): { periodStart: string; per
     periodEnd: periodEnd.toISOString(),
   };
 };
+
+const RULE_TARGET_SHORT_LABELS: Record<ClosingRuleTarget, string> = {
+  [ClosingRuleTarget.TIMESHEET_ENTRY_CREATE]: 'Lançar',
+  [ClosingRuleTarget.TIMESHEET_ENTRY_UPDATE]: 'Editar',
+  [ClosingRuleTarget.TIMESHEET_ENTRY_DELETE]: 'Excluir',
+  [ClosingRuleTarget.TIMESHEET_SUBMIT]: 'Enviar aprovação',
+  [ClosingRuleTarget.TIMESHEET_APPROVE]: 'Aprovar',
+  [ClosingRuleTarget.INVOICE_UPLOAD]: 'Enviar fatura',
+  [ClosingRuleTarget.INVOICE_UPDATE]: 'Atualizar fatura',
+};
+
+/** Retorna o primeiro dia selecionável para apontamento no mês (usado ao abrir modal de novo lançamento). */
+function getFirstSelectableDate(
+  filterMonth: string,
+  closingCalendar: ClosingCalendarType | null
+): string {
+  const [y, m] = filterMonth.split('-').map(Number);
+  if (!closingCalendar) {
+    return `${y}-${String(m).padStart(2, '0')}-01`;
+  }
+  const start = parseLocalDate(closingCalendar.periodStart);
+  const entryDeadline = closingCalendar.entryDeadline ? new Date(closingCalendar.entryDeadline) : null;
+  const end = entryDeadline
+    ? new Date(entryDeadline.getFullYear(), entryDeadline.getMonth(), entryDeadline.getDate())
+    : parseLocalDate(closingCalendar.periodEnd);
+  const invalidSet = new Set<string>();
+  closingCalendar.invalidDays?.forEach((d) => invalidSet.add(dateKey(parseLocalDate(d.date))));
+  const current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  while (current <= end) {
+    const key = dateKey(current);
+    if (!invalidSet.has(key)) return key;
+    current.setDate(current.getDate() + 1);
+  }
+  return dateKey(start);
+}
+
+/** Verifica se a data está dentro do período permitido e não é dia inválido. */
+function isDateSelectable(
+  dateStr: string,
+  filterMonth: string,
+  closingCalendar: ClosingCalendarType | null
+): boolean {
+  if (!dateStr || dateStr.length < 10) return false;
+  if (!closingCalendar) {
+    const [y, m] = filterMonth.split('-').map(Number);
+    const d = parseLocalDate(dateStr);
+    return d.getFullYear() === y && d.getMonth() === m - 1;
+  }
+  const start = parseLocalDate(closingCalendar.periodStart);
+  const entryDeadline = closingCalendar.entryDeadline ? new Date(closingCalendar.entryDeadline) : null;
+  const end = entryDeadline
+    ? new Date(entryDeadline.getFullYear(), entryDeadline.getMonth(), entryDeadline.getDate())
+    : parseLocalDate(closingCalendar.periodEnd);
+  const invalidSet = new Set<string>();
+  closingCalendar.invalidDays?.forEach((d) => invalidSet.add(dateKey(parseLocalDate(d.date))));
+  const d = parseLocalDate(dateStr);
+  const key = dateKey(d);
+  if (invalidSet.has(key)) return false;
+  return d >= start && d <= end;
+}
+
+interface EntryDateCalendarProps {
+  filterMonth: string;
+  onMonthChange?: (monthKey: string) => void;
+  closingCalendar: ClosingCalendarType | null;
+  userRole: UserRole | undefined;
+  value: string;
+  onChange: (date: string) => void;
+}
+
+/** Calendário para escolha da data do apontamento: do início do período até o prazo para editar; exibe prazos do perfil; não permite datas fora do prazo ou dias inválidos. */
+function EntryDateCalendar({ filterMonth, onMonthChange, closingCalendar, userRole, value, onChange }: EntryDateCalendarProps) {
+  const [year, month] = filterMonth.split('-').map(Number);
+
+  const { start, end, invalidSet, deadlineLabelsByDay, notConfigured, periodStart, periodEnd } = useMemo(() => {
+    if (!closingCalendar) {
+      const first = new Date(year, month - 1, 1);
+      const last = new Date(year, month, 0);
+      const invalidSet = new Set<string>();
+      const deadlineLabelsByDay = new Map<string, string[]>();
+      return {
+        start: first,
+        end: last,
+        invalidSet,
+        deadlineLabelsByDay,
+        notConfigured: true,
+        periodStart: undefined as string | undefined,
+        periodEnd: undefined as string | undefined,
+      };
+    }
+    const start = parseLocalDate(closingCalendar.periodStart);
+    const entryDeadline = closingCalendar.entryDeadline
+      ? new Date(closingCalendar.entryDeadline)
+      : null;
+    const end = entryDeadline
+      ? new Date(entryDeadline.getFullYear(), entryDeadline.getMonth(), entryDeadline.getDate())
+      : parseLocalDate(closingCalendar.periodEnd);
+
+    const invalidSet = new Set<string>();
+    closingCalendar.invalidDays?.forEach((d) => invalidSet.add(dateKey(parseLocalDate(d.date))));
+
+    const deadlineLabelsByDay = new Map<string, string[]>();
+    if (closingCalendar.entryDeadline) {
+      const k = getLocalDateKey(closingCalendar.entryDeadline);
+      const list = deadlineLabelsByDay.get(k) ?? [];
+      list.push('Prazo para lançar/editar');
+      deadlineLabelsByDay.set(k, list);
+    }
+    if (closingCalendar.submitDeadline) {
+      const k = getLocalDateKey(closingCalendar.submitDeadline);
+      const list = deadlineLabelsByDay.get(k) ?? [];
+      list.push('Prazo para enviar aprovação');
+      deadlineLabelsByDay.set(k, list);
+    }
+    closingCalendar.rules?.forEach((r) => {
+      if (r.isActive === false) return;
+      if (r.appliesToRole != null && r.appliesToRole !== userRole) return;
+      const k = getLocalDateKey(r.deadlineAt);
+      const list = deadlineLabelsByDay.get(k) ?? [];
+      list.push(r.message?.trim() || RULE_TARGET_SHORT_LABELS[r.target]);
+      deadlineLabelsByDay.set(k, list);
+    });
+
+    return {
+      start,
+      end,
+      invalidSet,
+      deadlineLabelsByDay,
+      notConfigured: false,
+      periodStart: closingCalendar.periodStart,
+      periodEnd: closingCalendar.periodEnd,
+    };
+  }, [closingCalendar, year, month, userRole]);
+
+  const isDaySelectable = (key: string, day: Date): boolean => {
+    if (invalidSet.has(key)) return false;
+    return day >= start && day <= end;
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-secondary-700">Data</label>
+      {notConfigured && (
+        <p className="text-xs text-warning-700 bg-warning-50 border border-warning-200 rounded px-2 py-1.5 mb-2">
+          Este mês ainda não possui calendário de fechamento configurado. Você pode escolher qualquer dia do mês.
+        </p>
+      )}
+      <Calendar
+        year={year}
+        month={month}
+        onYearMonthChange={(y, m) => onMonthChange?.(`${y}-${String(m).padStart(2, '0')}`)}
+        mode={notConfigured ? 'month' : 'period'}
+        periodStart={periodStart}
+        periodEnd={periodEnd}
+        invalidDayKeys={invalidSet}
+        deadlineLabelsByDay={deadlineLabelsByDay}
+        selectable
+        selectedDate={value}
+        onSelectDate={onChange}
+        isDaySelectable={isDaySelectable}
+        showLegend={true}
+        legendInvalidLabel="Dia bloqueado"
+        legendDeadlineLabel="Prazo (seu perfil)"
+        legendSelectedLabel="Selecionado"
+      />
+    </div>
+  );
+}
 
 const baseTimesheetEntrySchema = {
   userId: z.string().min(1, 'Usuário é obrigatório'),
@@ -140,7 +321,13 @@ export const TimesheetEntries = () => {
     isOpen: false,
   });
   const [currentMonthSubmission, setCurrentMonthSubmission] = useState<TimesheetSubmission | null>(null);
-  
+  const [closingCalendar, setClosingCalendar] = useState<ClosingCalendarType | null>(null);
+  const [closingCalendarLoading, setClosingCalendarLoading] = useState(false);
+  /** 403 na API de calendário = usuário sem permissão para ler calendário (ex.: consultor); mostramos mensagem específica */
+  const [closingCalendarForbidden, setClosingCalendarForbidden] = useState(false);
+  /** Mês do apontamento selecionado no modal (para criar/editar); drive do fetch do calendário quando o modal está aberto */
+  const [entryMonth, setEntryMonth] = useState<string>(getCurrentMonth());
+
   // Filtros persistentes - sempre inicia com o mês atual
   const [filters, setFilters] = useFilters('timesheetEntries', {
     filterUser: '',
@@ -183,6 +370,15 @@ export const TimesheetEntries = () => {
 
   const watchedUserId = watch('userId');
 
+  // Ao abrir o modal de novo lançamento, garante que a data seja selecionável (ex.: quando o calendário carrega depois)
+  useEffect(() => {
+    if (!isModalOpen || editingEntry) return;
+    const filterMonth = entryMonth || filters.filterMonth || getCurrentMonth();
+    const currentDate = watch('date');
+    if (!currentDate || isDateSelectable(currentDate, filterMonth, closingCalendar)) return;
+    setValue('date', getFirstSelectableDate(filterMonth, closingCalendar), { shouldValidate: true });
+  }, [isModalOpen, editingEntry, closingCalendar, entryMonth, filters.filterMonth]);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -196,6 +392,53 @@ export const TimesheetEntries = () => {
       fetchCurrentMonthSubmission();
     }
   }, [filters.filterMonth, isConsultant, currentUser?.id]);
+
+  // Busca o calendário de fechamento: no modal usa o mês do apontamento (entryMonth), fora do modal usa o filtro da lista (filterMonth)
+  useEffect(() => {
+    const activeMonth = isModalOpen && entryMonth
+      ? entryMonth
+      : (filters.filterMonth || getCurrentMonth());
+    const [yearStr, monthStr] = activeMonth.split('-');
+    const yearNum = parseInt(yearStr, 10);
+    const monthNum = parseInt(monthStr, 10);
+    let cancelled = false;
+    setClosingCalendarLoading(true);
+    (async () => {
+      try {
+        setClosingCalendarForbidden(false);
+        const res = await api.get<ClosingCalendarType[] | ClosingCalendarType>('/closing-calendars', {
+          params: { closingType: ClosingType.TYPE_1, year: yearNum, month: monthNum },
+        });
+        if (cancelled) return;
+        const data = res.data;
+        const list: ClosingCalendarType[] = Array.isArray(data)
+          ? data
+          : data && typeof data === 'object' && 'year' in data && 'month' in data
+            ? [data as ClosingCalendarType]
+            : [];
+        const found = list.find(
+          (c) =>
+            c.closingType === ClosingType.TYPE_1 &&
+            Number(c.year) === yearNum &&
+            Number(c.month) === monthNum
+        );
+        setClosingCalendar(found ?? null);
+      } catch (err: any) {
+        if (cancelled) return;
+        const status = err?.response?.status;
+        if (status === 403) {
+          setClosingCalendarForbidden(true);
+          setClosingCalendar(null);
+        } else {
+          setClosingCalendarForbidden(false);
+          setClosingCalendar(null);
+        }
+      } finally {
+        if (!cancelled) setClosingCalendarLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isModalOpen, entryMonth, filters.filterMonth]);
 
   const fetchData = async () => {
     try {
@@ -295,10 +538,13 @@ export const TimesheetEntries = () => {
 
   const handleCreate = () => {
     setEditingEntry(null);
+    const filterMonth = filters.filterMonth || getCurrentMonth();
+    setEntryMonth(filterMonth);
+    const initialDate = getFirstSelectableDate(filterMonth, closingCalendar);
     reset({
       userId: isConsultant ? currentUser?.id || '' : '',
       projectId: '',
-      date: new Date().toISOString().split('T')[0],
+      date: initialDate,
       hours: '',
       activityType: '',
       notes: '',
@@ -322,6 +568,8 @@ export const TimesheetEntries = () => {
     }
     
     setEditingEntry(entry);
+    const entryMonthKey = entry.date.slice(0, 7); // YYYY-MM
+    setEntryMonth(entryMonthKey);
     reset({
       userId: entry.userId,
       projectId: entry.projectId,
@@ -1203,13 +1451,77 @@ export const TimesheetEntries = () => {
             ]}
             placeholder="Selecione um projeto"
           />
-          <Input
-            type="date"
-            label="Data"
-            required
-            register={register('date')}
-            error={errors.date?.message}
-          />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Mês do apontamento</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="sr-only">Mês</label>
+                <select
+                  className="input-base w-full"
+                  value={entryMonth ? entryMonth.slice(5, 7) : ''}
+                  onChange={(e) => {
+                    const m = Number(e.target.value);
+                    const y = entryMonth ? parseInt(entryMonth.slice(0, 4), 10) : new Date().getFullYear();
+                    const newMonth = `${y}-${String(m).padStart(2, '0')}`;
+                    setEntryMonth(newMonth);
+                    setValue('date', `${newMonth}-01`, { shouldValidate: true });
+                  }}
+                  aria-label="Mês"
+                >
+                  {MONTH_NAMES.map((name, i) => (
+                    <option key={i} value={String(i + 1).padStart(2, '0')}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="sr-only">Ano</label>
+                <select
+                  className="input-base w-full"
+                  value={entryMonth ? entryMonth.slice(0, 4) : ''}
+                  onChange={(e) => {
+                    const y = Number(e.target.value);
+                    const m = entryMonth ? entryMonth.slice(5, 7) : '01';
+                    const newMonth = `${y}-${m}`;
+                    setEntryMonth(newMonth);
+                    setValue('date', `${newMonth}-01`, { shouldValidate: true });
+                  }}
+                  aria-label="Ano"
+                >
+                  {(() => {
+                    const currentYear = new Date().getFullYear();
+                    return Array.from({ length: 5 }, (_, i) => currentYear - 2 + i).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ));
+                  })()}
+                </select>
+              </div>
+            </div>
+          </div>
+          {closingCalendarLoading ? (
+            <div className="text-sm text-secondary-500 py-4">Carregando calendário...</div>
+          ) : closingCalendar ? (
+            <>
+              <EntryDateCalendar
+                filterMonth={entryMonth}
+                onMonthChange={setEntryMonth}
+                closingCalendar={closingCalendar}
+                userRole={currentUser?.role}
+                value={watch('date') || ''}
+                onChange={(date) => setValue('date', date, { shouldValidate: true })}
+              />
+              {errors.date?.message && (
+                <p className="mt-1 text-sm text-error-600">{errors.date.message}</p>
+              )}
+            </>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-secondary-600 bg-neutral-100 border border-neutral-200 rounded px-3 py-2">
+                {closingCalendarForbidden
+                  ? 'Você não tem permissão para consultar o calendário de fechamento. Não é possível criar lançamento para este mês.'
+                  : 'Não há calendário de fechamento configurado para este mês. Não é possível criar lançamento até que o calendário seja configurado.'}
+              </p>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-secondary-700 mb-1">
               Horas <span className="text-error-500 ml-1">*</span>
@@ -1284,6 +1596,8 @@ export const TimesheetEntries = () => {
             <button
               type="submit"
               className="btn-primary"
+              disabled={!editingEntry && (closingCalendarLoading || !closingCalendar)}
+              title={!editingEntry && !closingCalendar && !closingCalendarLoading ? 'Configure o calendário de fechamento para este mês para poder criar lançamentos.' : undefined}
             >
               Salvar
             </button>

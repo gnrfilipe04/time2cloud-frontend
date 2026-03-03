@@ -5,14 +5,19 @@ import {
   ClosingType,
   ClosingRuleTarget,
   ClosingRuleEnforcement,
+  UserRole,
 } from '../types';
 import { Modal } from '../components/Modal';
 import { Input, Textarea } from '../components/Input';
-
-const MONTH_NAMES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-];
+import { Calendar } from '../components/Calendar';
+import {
+  formatDateForInput,
+  parseLocalDate,
+  toDateTimeLocal,
+  getLocalDateKey,
+  MONTH_NAMES,
+  dateKey,
+} from '../utils/calendar';
 
 const CLOSING_TYPE_LABELS: Record<ClosingType, string> = {
   [ClosingType.TYPE_1]: 'Tipo 1',
@@ -24,6 +29,7 @@ const RULE_TARGET_LABELS: Record<ClosingRuleTarget, string> = {
   [ClosingRuleTarget.TIMESHEET_ENTRY_UPDATE]: 'Editar apontamento',
   [ClosingRuleTarget.TIMESHEET_ENTRY_DELETE]: 'Excluir apontamento',
   [ClosingRuleTarget.TIMESHEET_SUBMIT]: 'Enviar para aprovação',
+  [ClosingRuleTarget.TIMESHEET_APPROVE]: 'Aprovar apontamentos',
   [ClosingRuleTarget.INVOICE_UPLOAD]: 'Enviar fatura',
   [ClosingRuleTarget.INVOICE_UPDATE]: 'Atualizar fatura',
 };
@@ -33,71 +39,14 @@ const ENFORCEMENT_LABELS: Record<ClosingRuleEnforcement, string> = {
   [ClosingRuleEnforcement.WARN]: 'Avisar',
 };
 
-/** Formata data em YYYY-MM-DD usando horário local (evita deslocamento por timezone) */
-function formatDateForInput(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/** Parse de string ISO ou YYYY-MM-DD para Date à meia-noite no fuso local (evita deslocamento UTC) */
-function parseLocalDate(s: string): Date {
-  const [y, m, d] = s.slice(0, 10).split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
-/** Grid do mês (1 a último dia do mês) — usado quando não há calendário carregado */
-function getMonthGrid(year: number, month: number): (Date | null)[][] {
-  const first = new Date(year, month - 1, 1);
-  const last = new Date(year, month, 0);
-  const startPad = first.getDay();
-  const daysInMonth = last.getDate();
-  const grid: (Date | null)[][] = [];
-  let week: (Date | null)[] = [];
-  for (let i = 0; i < startPad; i++) week.push(null);
-  for (let d = 1; d <= daysInMonth; d++) {
-    week.push(new Date(year, month - 1, d));
-    if (week.length === 7) {
-      grid.push(week);
-      week = [];
-    }
-  }
-  if (week.length) {
-    while (week.length < 7) week.push(null);
-    grid.push(week);
-  }
-  return grid;
-}
-
-/** Grid do período (do dia inicial ao dia final), podendo atravessar dois meses. Usa datas locais. */
-function getPeriodGrid(periodStart: string, periodEnd: string): (Date | null)[][] {
-  const start = parseLocalDate(periodStart);
-  const end = parseLocalDate(periodEnd);
-  const grid: (Date | null)[][] = [];
-  let week: (Date | null)[] = [];
-  const pad = start.getDay();
-  for (let i = 0; i < pad; i++) week.push(null);
-  const current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  while (current <= end) {
-    week.push(new Date(current));
-    if (week.length === 7) {
-      grid.push(week);
-      week = [];
-    }
-    current.setDate(current.getDate() + 1);
-  }
-  if (week.length) {
-    while (week.length < 7) week.push(null);
-    grid.push(week);
-  }
-  return grid;
-}
-
-/** Chave única do dia em horário local (YYYY-MM-DD) para comparação */
-function dateKey(d: Date): string {
-  return formatDateForInput(d);
-}
+const USER_ROLE_LABELS: Record<UserRole, string> = {
+  [UserRole.CONSULTANT]: 'Consultor',
+  [UserRole.COMPANY_MANAGER]: 'Gestor da empresa',
+  [UserRole.PEOPLE_MANAGER]: 'Gestor de pessoas',
+  [UserRole.PROJECT_MANAGER]: 'Gestor de projeto',
+  [UserRole.ADMIN]: 'Administrador',
+  [UserRole.FINANCE]: 'Financeiro',
+};
 
 export const ClosingCalendar = () => {
   const now = new Date();
@@ -127,6 +76,7 @@ export const ClosingCalendar = () => {
     deadlineAt: '',
     enforcement: ClosingRuleEnforcement.BLOCK,
     message: '',
+    appliesToRole: '' as UserRole | '',
   });
 
   const fetchCalendars = async () => {
@@ -141,15 +91,11 @@ export const ClosingCalendar = () => {
       );
       setCurrentCalendar(found ?? null);
       if (found) {
-        const toDateTimeLocal = (d: string) => {
-          const x = new Date(d);
-          return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}T${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
-        };
         setConfigForm({
           periodStart: found.periodStart ? formatDateForInput(parseLocalDate(found.periodStart)) : '',
           periodEnd: found.periodEnd ? formatDateForInput(parseLocalDate(found.periodEnd)) : '',
-          entryDeadline: found.entryDeadline ? toDateTimeLocal(found.entryDeadline) : '',
-          submitDeadline: found.submitDeadline ? toDateTimeLocal(found.submitDeadline) : '',
+          entryDeadline: found.entryDeadline ? toDateTimeLocal(new Date(found.entryDeadline)) : '',
+          submitDeadline: found.submitDeadline ? toDateTimeLocal(new Date(found.submitDeadline)) : '',
           note: found.note ?? '',
         });
       } else {
@@ -170,6 +116,20 @@ export const ClosingCalendar = () => {
     }
   };
 
+  /** Atualiza o calendário atual com dados frescos do backend (invalidDays, rules). */
+  const refetchCurrentCalendar = async () => {
+    if (!currentCalendar?.id) return;
+    try {
+      const res = await api.get<ClosingCalendarType>(`/closing-calendars/${currentCalendar.id}`);
+      setCurrentCalendar(res.data);
+      setCalendars((prev) =>
+        prev.map((c) => (c.id === res.data.id ? res.data : c)),
+      );
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchCalendars();
   }, [closingType, year, month]);
@@ -182,11 +142,46 @@ export const ClosingCalendar = () => {
     return set;
   }, [currentCalendar?.invalidDays]);
 
-  const calendarGrid = useMemo(() => {
-    if (currentCalendar)
-      return getPeriodGrid(currentCalendar.periodStart, currentCalendar.periodEnd);
-    return getMonthGrid(year, month);
-  }, [currentCalendar, year, month]);
+  /** Motivo da marcação por dia (para tooltip) — dias inválidos */
+  const invalidDayReasons = useMemo(() => {
+    const map = new Map<string, string>();
+    currentCalendar?.invalidDays?.forEach((d) => {
+      const key = dateKey(parseLocalDate(d.date));
+      map.set(key, d.reason?.trim() || 'Dia bloqueado para apontamentos');
+    });
+    return map;
+  }, [currentCalendar?.invalidDays]);
+
+  /** Prazos por dia (para cor e tooltip) — entry e submit deadline + regras de prazo */
+  const deadlineDays = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!currentCalendar) return map;
+    if (currentCalendar.entryDeadline) {
+      const key = getLocalDateKey(currentCalendar.entryDeadline);
+      const list = map.get(key) ?? [];
+      list.push('Prazo para lançar/editar apontamentos');
+      map.set(key, list);
+    }
+    if (currentCalendar.submitDeadline) {
+      const key = getLocalDateKey(currentCalendar.submitDeadline);
+      const list = map.get(key) ?? [];
+      list.push('Prazo para enviar para aprovação');
+      map.set(key, list);
+    }
+    currentCalendar.rules?.forEach((r) => {
+      if (r.isActive === false) return;
+      const key = getLocalDateKey(r.deadlineAt);
+      const list = map.get(key) ?? [];
+      const label = r.message?.trim() || RULE_TARGET_LABELS[r.target as ClosingRuleTarget];
+      list.push(label);
+      map.set(key, list);
+    });
+    return map;
+  }, [
+    currentCalendar?.entryDeadline,
+    currentCalendar?.submitDeadline,
+    currentCalendar?.rules,
+  ]);
 
   const saveOrCreateConfig = async () => {
     if (!configForm.periodStart || !configForm.periodEnd) return;
@@ -198,12 +193,10 @@ export const ClosingCalendar = () => {
         month,
         periodStart: configForm.periodStart,
         periodEnd: configForm.periodEnd,
+        entryDeadline: configForm.entryDeadline || null,
+        submitDeadline: configForm.submitDeadline || null,
+        note: configForm.note || null,
       };
-      if (!configModalInitialOnly) {
-        payload.entryDeadline = configForm.entryDeadline || null;
-        payload.submitDeadline = configForm.submitDeadline || null;
-        payload.note = configForm.note || null;
-      }
       const res = await api.post<ClosingCalendarType>('/closing-calendars', payload);
       setCurrentCalendar(res.data);
       setCalendars((prev) => {
@@ -234,7 +227,7 @@ export const ClosingCalendar = () => {
         date: invalidDayForm.date,
         reason: invalidDayForm.reason || undefined,
       });
-      await fetchCalendars();
+      await refetchCurrentCalendar();
       setInvalidDayForm({ date: '', reason: '' });
       setInvalidDayModalOpen(false);
     } catch (e) {
@@ -251,7 +244,7 @@ export const ClosingCalendar = () => {
       await api.delete(`/closing-calendars/${currentCalendar.id}/invalid-days`, {
         params: { date },
       });
-      await fetchCalendars();
+      await refetchCurrentCalendar();
     } catch (e) {
       console.error(e);
       alert('Erro ao remover dia inválido.');
@@ -267,13 +260,15 @@ export const ClosingCalendar = () => {
         deadlineAt: ruleForm.deadlineAt,
         enforcement: ruleForm.enforcement,
         message: ruleForm.message || undefined,
+        appliesToRole: ruleForm.appliesToRole || null,
       });
-      await fetchCalendars();
+      await refetchCurrentCalendar();
       setRuleForm({
         target: '',
         deadlineAt: '',
         enforcement: ClosingRuleEnforcement.BLOCK,
         message: '',
+        appliesToRole: '',
       });
       setRuleModalOpen(false);
     } catch (e) {
@@ -288,7 +283,7 @@ export const ClosingCalendar = () => {
     if (!currentCalendar || !confirm('Remover esta regra?')) return;
     try {
       await api.delete(`/closing-calendars/${currentCalendar.id}/rules/${ruleId}`);
-      await fetchCalendars();
+      await refetchCurrentCalendar();
     } catch (e) {
       console.error(e);
       alert('Erro ao remover regra.');
@@ -359,6 +354,16 @@ export const ClosingCalendar = () => {
                     type="button"
                     className="btn-secondary text-sm"
                     onClick={() => {
+                      if (currentCalendar) {
+                        const end = parseLocalDate(currentCalendar.periodEnd);
+                        setConfigForm({
+                          periodStart: formatDateForInput(parseLocalDate(currentCalendar.periodStart)),
+                          periodEnd: formatDateForInput(end),
+                          entryDeadline: currentCalendar.entryDeadline ? toDateTimeLocal(new Date(currentCalendar.entryDeadline)) : '',
+                          submitDeadline: currentCalendar.submitDeadline ? toDateTimeLocal(new Date(currentCalendar.submitDeadline)) : '',
+                          note: currentCalendar.note ?? '',
+                        });
+                      }
                       setConfigModalInitialOnly(false);
                       setConfigModalOpen(true);
                     }}
@@ -418,46 +423,26 @@ export const ClosingCalendar = () => {
             </div>
 
             <div className="card">
-              <h3 className="text-lg font-semibold text-secondary-700 mb-2">Calendário do período</h3>
-              <p className="text-xs text-secondary-500 mb-2">
-                Exibição de {parseLocalDate(currentCalendar.periodStart).toLocaleDateString('pt-BR')} a{' '}
-                {parseLocalDate(currentCalendar.periodEnd).toLocaleDateString('pt-BR')}. Dias em destaque estão bloqueados para apontamentos.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="text-secondary-600">
-                      <th className="border border-neutral-200 p-1">Dom</th>
-                      <th className="border border-neutral-200 p-1">Seg</th>
-                      <th className="border border-neutral-200 p-1">Ter</th>
-                      <th className="border border-neutral-200 p-1">Qua</th>
-                      <th className="border border-neutral-200 p-1">Qui</th>
-                      <th className="border border-neutral-200 p-1">Sex</th>
-                      <th className="border border-neutral-200 p-1">Sáb</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {calendarGrid.map((week, wi) => (
-                      <tr key={wi}>
-                        {week.map((day, di) => {
-                          if (!day) return <td key={di} className="border border-neutral-100 p-1 bg-neutral-50" />;
-                          const key = dateKey(day);
-                          const invalid = invalidDaySet.has(key);
-                          return (
-                            <td
-                              key={di}
-                              className={`border p-1 text-center ${invalid ? 'bg-error-100 text-error-700 font-medium' : 'border-neutral-200'}`}
-                              title={invalid ? 'Dia inválido para apontamento' : undefined}
-                            >
-                              {day.getDate()}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Calendar
+                title="Calendário do período"
+                year={year}
+                month={month}
+                onYearMonthChange={(y, m) => {
+                  setYear(y);
+                  setMonth(m);
+                }}
+                mode="period"
+                periodStart={currentCalendar.periodStart}
+                periodEnd={currentCalendar.periodEnd}
+                invalidDayKeys={invalidDaySet}
+                invalidDayReasons={invalidDayReasons}
+                deadlineLabelsByDay={deadlineDays}
+                helpText={`Exibição de ${parseLocalDate(currentCalendar.periodStart).toLocaleDateString('pt-BR')} a ${parseLocalDate(currentCalendar.periodEnd).toLocaleDateString('pt-BR')}. Passe o mouse sobre um dia marcado para ver o motivo.`}
+                showLegend={true}
+                showHeader={true}
+                legendInvalidLabel="Dia inválido (bloqueado)"
+                legendDeadlineLabel="Prazo (lançar/editar ou enviar aprovação)"
+              />
             </div>
           </div>
 
@@ -514,6 +499,7 @@ export const ClosingCalendar = () => {
                       deadlineAt: '',
                       enforcement: ClosingRuleEnforcement.BLOCK,
                       message: '',
+                      appliesToRole: '',
                     });
                     setRuleModalOpen(true);
                   }}
@@ -535,6 +521,11 @@ export const ClosingCalendar = () => {
                         <span className="text-secondary-500 text-sm ml-2">
                           até {new Date(r.deadlineAt).toLocaleString('pt-BR')} — {ENFORCEMENT_LABELS[r.enforcement]}
                         </span>
+                        {r.appliesToRole && (
+                          <span className="text-secondary-500 text-sm ml-2">
+                            (perfil: {USER_ROLE_LABELS[r.appliesToRole]})
+                          </span>
+                        )}
                         {r.message && <p className="text-sm text-secondary-600 mt-1">{r.message}</p>}
                         {!r.isActive && <span className="text-secondary-400 text-xs">(inativa)</span>}
                       </div>
@@ -563,11 +554,12 @@ export const ClosingCalendar = () => {
             onClick={() => {
               const start = new Date(year, month - 1, 1);
               const end = new Date(year, month, 0);
+              const endAt2359 = new Date(year, month - 1, end.getDate(), 23, 59);
               setConfigForm({
                 periodStart: formatDateForInput(start),
                 periodEnd: formatDateForInput(end),
-                entryDeadline: '',
-                submitDeadline: '',
+                entryDeadline: toDateTimeLocal(endAt2359),
+                submitDeadline: toDateTimeLocal(endAt2359),
                 note: '',
               });
               setConfigModalInitialOnly(true);
@@ -597,28 +589,26 @@ export const ClosingCalendar = () => {
             value={configForm.periodEnd}
             onChange={(e) => setConfigForm((f) => ({ ...f, periodEnd: e.target.value }))}
           />
-          {!configModalInitialOnly && (
-            <>
-              <Input
-                label="Prazo para lançar/editar apontamentos"
-                type="datetime-local"
-                value={configForm.entryDeadline}
-                onChange={(e) => setConfigForm((f) => ({ ...f, entryDeadline: e.target.value }))}
-              />
-              <Input
-                label="Prazo para enviar para aprovação"
-                type="datetime-local"
-                value={configForm.submitDeadline}
-                onChange={(e) => setConfigForm((f) => ({ ...f, submitDeadline: e.target.value }))}
-              />
-              <Textarea
-                label="Observação"
-                value={configForm.note}
-                onChange={(e) => setConfigForm((f) => ({ ...f, note: e.target.value }))}
-                rows={3}
-              />
-            </>
-          )}
+            
+          <Input
+            label="Prazo para lançar/editar apontamentos"
+            type="datetime-local"
+            value={configForm.entryDeadline}
+            onChange={(e) => setConfigForm((f) => ({ ...f, entryDeadline: e.target.value }))}
+          />
+          <Input
+            label="Prazo para enviar para aprovação"
+            type="datetime-local"
+            value={configForm.submitDeadline}
+            onChange={(e) => setConfigForm((f) => ({ ...f, submitDeadline: e.target.value }))}
+          />
+          <Textarea
+            label="Observação"
+            value={configForm.note}
+            onChange={(e) => setConfigForm((f) => ({ ...f, note: e.target.value }))}
+            rows={3}
+          />
+            
           {configModalInitialOnly && (
             <p className="text-sm text-secondary-500">
               Os finais de semana do período serão bloqueados automaticamente. Prazos e observações podem ser editados depois.
@@ -701,6 +691,22 @@ export const ClosingCalendar = () => {
             onChange={(e) => setRuleForm((f) => ({ ...f, message: e.target.value }))}
             placeholder="Exibida ao usuário ao bloquear ou avisar"
           />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Aplicar ao perfil</label>
+            <select
+              className="input-base w-full"
+              value={ruleForm.appliesToRole}
+              onChange={(e) => setRuleForm((f) => ({ ...f, appliesToRole: e.target.value as UserRole | '' }))}
+            >
+              <option value="">Todos os perfis</option>
+              {(Object.entries(USER_ROLE_LABELS) as [UserRole, string][]).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-secondary-500 mt-1">
+              Se escolher um perfil, o prazo valerá apenas para usuários com esse perfil. Deixe em &quot;Todos os perfis&quot; para aplicar a todos.
+            </p>
+          </div>
           <div className="flex justify-end gap-2 pt-4">
             <button type="button" className="btn-secondary" onClick={() => setRuleModalOpen(false)}>
               Cancelar
