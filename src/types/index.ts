@@ -112,6 +112,8 @@ export interface User {
   role: UserRole;
   contractType?: string;
   closingPolicyId?: string | null;
+  companyId?: string | null;
+  company?: Company | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
