@@ -1,12 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '../config/api';
-import { User, UserRole } from '../types';
+import { User, UserRole, Company, ContractType } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
-import { Input, Select, Checkbox } from '../components/Input';
+import { Input, Select, Checkbox, CurrencyInput } from '../components/Input';
 import { useFilters } from '../hooks/useFilters';
 
 const userSchema = z.object({
@@ -14,7 +14,10 @@ const userSchema = z.object({
   email: z.string().email('Email inválido').min(1, 'Email é obrigatório'),
   password: z.string().optional(),
   role: z.nativeEnum(UserRole),
-  contractType: z.string().optional(),
+  contractType: z.nativeEnum(ContractType),
+  companyId: z.string().optional(),
+  hourlyRate: z.string().optional(),
+  monthlyRate: z.string().optional(),
   isActive: z.boolean(),
 });
 
@@ -22,6 +25,7 @@ type UserFormData = z.infer<typeof userSchema>;
 
 export const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -37,11 +41,13 @@ export const Users = () => {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors },
   } = useForm<UserFormData>({
     resolver: zodResolver(userSchema),
     defaultValues: {
       role: UserRole.CONSULTANT,
+      contractType: ContractType.CLT,
       isActive: true,
     },
   });
@@ -52,8 +58,12 @@ export const Users = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get<User[]>('/users');
-      setUsers(response.data);
+      const [usersRes, companiesRes] = await Promise.all([
+        api.get<User[]>('/users'),
+        api.get<Company[]>('/companies'),
+      ]);
+      setUsers(usersRes.data);
+      setCompanies(companiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar usuários:', error);
     } finally {
@@ -68,7 +78,10 @@ export const Users = () => {
       email: '',
       password: '',
       role: UserRole.CONSULTANT,
-      contractType: '',
+      contractType: ContractType.CLT,
+      companyId: '',
+      hourlyRate: undefined,
+      monthlyRate: undefined,
       isActive: true,
     });
     setIsModalOpen(true);
@@ -81,7 +94,10 @@ export const Users = () => {
       email: user.email,
       password: '',
       role: user.role,
-      contractType: user.contractType || '',
+      contractType: (user.contractType as ContractType) || ContractType.CLT,
+      companyId: user.companyId || user.company?.id || '',
+      hourlyRate: user.hourlyRate != null ? String(user.hourlyRate) : undefined,
+      monthlyRate: user.monthlyRate != null ? String(user.monthlyRate) : undefined,
       isActive: user.isActive,
     });
     setIsModalOpen(true);
@@ -103,18 +119,28 @@ export const Users = () => {
 
   const onSubmit = async (data: UserFormData) => {
     try {
+      const payload = {
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        contractType: data.contractType,
+        companyId: data.companyId && data.companyId.trim() !== '' ? data.companyId : null,
+        hourlyRate: data.hourlyRate != null && String(data.hourlyRate).trim() !== '' ? Number(data.hourlyRate) : null,
+        monthlyRate: data.monthlyRate != null && String(data.monthlyRate).trim() !== '' ? Number(data.monthlyRate) : null,
+        isActive: data.isActive,
+      } as Record<string, unknown>;
       if (editingUser) {
-        const updateData: any = { ...data };
-        if (!updateData.password || updateData.password === '') {
-          delete updateData.password;
+        if (data.password && data.password.trim() !== '') {
+          payload.password = data.password;
         }
-        await api.patch(`/users/${editingUser.id}`, updateData);
+        await api.patch(`/users/${editingUser.id}`, payload);
       } else {
-        if (!data.password || data.password === '') {
+        if (!data.password || data.password.trim() === '') {
           alert('Senha é obrigatória para novos usuários');
           return;
         }
-        await api.post('/users', data);
+        payload.password = data.password;
+        await api.post('/users', payload);
       }
       setIsModalOpen(false);
       fetchUsers();
@@ -153,6 +179,23 @@ export const Users = () => {
     { key: 'email', label: 'Email' },
     { key: 'role', label: 'Função' },
     { key: 'contractType', label: 'Tipo de Contrato' },
+    {
+      key: 'company',
+      label: 'Empresa',
+      render: (user: User) => user.company?.name ?? user.companyId ?? '—',
+    },
+    {
+      key: 'hourlyRate',
+      label: 'Valor hora',
+      render: (user: User) =>
+        user.hourlyRate != null ? `R$ ${Number(user.hourlyRate).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—',
+    },
+    {
+      key: 'monthlyRate',
+      label: 'Valor mensal',
+      render: (user: User) =>
+        user.monthlyRate != null ? `R$ ${Number(user.monthlyRate).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—',
+    },
     {
       key: 'isActive',
       label: 'Ativo',
@@ -276,12 +319,57 @@ export const Users = () => {
               label: role,
             }))}
           />
-          <Input
-            type="text"
+          <Select
             label="Tipo de Contrato"
             register={register('contractType')}
             error={errors.contractType?.message}
+            options={[
+              { value: ContractType.CLT, label: 'CLT' },
+              { value: ContractType.PJ, label: 'PJ' },
+            ]}
           />
+          <Controller
+            name="hourlyRate"
+            control={control}
+            render={({ field }) => (
+              <CurrencyInput
+                label="Valor hora (R$)"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                error={errors.hourlyRate?.message}
+              />
+            )}
+          />
+          <Controller
+            name="monthlyRate"
+            control={control}
+            render={({ field }) => (
+              <CurrencyInput
+                label="Valor mensal (R$)"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                error={errors.monthlyRate?.message}
+              />
+            )}
+          />
+          <div>
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Empresa</label>
+            <select
+              className="input-base"
+              {...register('companyId')}
+            >
+              <option value="">Nenhuma</option>
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                  {company.cnpj ? ` (${company.cnpj})` : ''}
+                </option>
+              ))}
+            </select>
+            {errors.companyId?.message && (
+              <p className="mt-1 text-sm text-error-600">{errors.companyId?.message}</p>
+            )}
+          </div>
           <Checkbox
             label="Ativo"
             register={register('isActive')}

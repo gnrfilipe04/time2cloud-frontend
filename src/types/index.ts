@@ -7,6 +7,11 @@ export enum UserRole {
   FINANCE = 'FINANCE',
 }
 
+export enum ContractType {
+  CLT = 'CLT',
+  PJ = 'PJ',
+}
+
 export enum TimesheetStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
@@ -111,6 +116,8 @@ export interface User {
   email: string;
   role: UserRole;
   contractType?: string;
+  hourlyRate?: number | null;
+  monthlyRate?: number | null;
   closingPolicyId?: string | null;
   companyId?: string | null;
   company?: Company | null;
@@ -227,12 +234,13 @@ export interface TimesheetSubmission {
 export interface Invoice {
   id: string;
   userId: string;
-  periodStart: string;
-  periodEnd: string;
+  year: number;
+  month: number;
   value: number;
   cnpj: string;
   filePath: string;
   status: InvoiceStatus;
+  statusMessage?: string | null;
   createdAt: string;
   updatedAt: string;
   user?: User;

@@ -7,7 +7,7 @@ import { Invoice, User, InvoiceStatus, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
-import { Input, Select, CurrencyInput } from '../components/Input';
+import { Input, Select, CurrencyInput, Textarea } from '../components/Input';
 import { SelectSearchable } from '../components/SelectSearchable';
 import { statusColors, statusTexts } from '../constants';
 import { useFilters } from '../hooks/useFilters';
@@ -15,14 +15,21 @@ import { formatCurrencyBRL } from '../utils/currency';
 import { formatDateOnly, toDateInputValue } from '../utils/date';
 
 const invoiceSchema = z.object({
-  periodStart: z.string().min(1, 'Data de início é obrigatória'),
-  periodEnd: z.string().min(1, 'Data de fim é obrigatória'),
+  year: z
+    .string()
+    .min(4, 'Ano é obrigatório')
+    .regex(/^\d{4}$/, 'Ano inválido'),
+  month: z
+    .string()
+    .min(1, 'Mês é obrigatório')
+    .regex(/^(0?[1-9]|1[0-2])$/, 'Mês inválido'),
   value: z.string().min(1, 'Valor é obrigatório').refine((val) => {
     const num = parseFloat(val);
     return !isNaN(num) && num > 0;
   }, 'Valor deve ser um número maior que zero'),
   filePath: z.string().min(1, 'É obrigatório anexar o PDF da nota'),
-  status: z.nativeEnum(InvoiceStatus),
+  status: z.nativeEnum(InvoiceStatus).optional(),
+  statusMessage: z.string().optional(),
 });
 
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
@@ -37,6 +44,13 @@ export const Invoices = () => {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
   const [failedFileIds, setFailedFileIds] = useState<Set<string>>(new Set());
+  const [statusMessageModal, setStatusMessageModal] = useState<{
+    isOpen: boolean;
+    invoice: Invoice | null;
+  }>({
+    isOpen: false,
+    invoice: null,
+  });
 
   const {
     register,
@@ -57,8 +71,8 @@ export const Invoices = () => {
   const [filters, setFilters] = useFilters('invoices', {
     filterUser: '',
     filterStatus: '',
-    filterPeriodStart: '',
-    filterPeriodEnd: '',
+    filterYear: '',
+    filterMonth: '',
   });
 
   useEffect(() => {
@@ -83,11 +97,12 @@ export const Invoices = () => {
   const handleCreate = () => {
     setEditingInvoice(null);
     reset({
-      periodStart: '',
-      periodEnd: '',
+      year: '',
+      month: '',
       value: '',
       filePath: '',
       status: InvoiceStatus.PENDING,
+      statusMessage: '',
     });
     setIsModalOpen(true);
   };
@@ -96,11 +111,12 @@ export const Invoices = () => {
     setEditingInvoice(invoice);
     const filePath = invoice.filePath != null && String(invoice.filePath).trim() !== '' ? invoice.filePath : '';
     reset({
-      periodStart: toDateInputValue(String(invoice.periodStart)),
-      periodEnd: toDateInputValue(String(invoice.periodEnd)),
+      year: String(invoice.year),
+      month: String(invoice.month),
       value: invoice.value.toString(),
       filePath,
       status: invoice.status,
+      statusMessage: invoice.statusMessage ?? '',
     });
     setIsModalOpen(true);
   };
@@ -121,21 +137,25 @@ export const Invoices = () => {
 
   const onSubmit = async (data: InvoiceFormData) => {
     try {
+      const year = parseInt(data.year, 10);
+      const month = parseInt(data.month, 10);
       const payload: Record<string, unknown> = {
-        periodStart: data.periodStart,
-        periodEnd: data.periodEnd,
+        year,
+        month,
         value: parseFloat(data.value),
         filePath: data.filePath,
-        status: data.status,
       };
 
       if (editingInvoice) {
+        payload.status = data.status ?? editingInvoice.status;
+        if (data.statusMessage !== undefined) payload.statusMessage = data.statusMessage || null;
         await api.patch(`/invoices/${editingInvoice.id}`, {
           ...payload,
           userId: editingInvoice.userId,
           cnpj: editingInvoice.cnpj,
         });
       } else {
+        payload.status = InvoiceStatus.PENDING;
         await api.post('/invoices', payload);
       }
       setIsModalOpen(false);
@@ -209,17 +229,30 @@ export const Invoices = () => {
     if (filters.filterStatus) {
       filtered = filtered.filter((i) => i.status === filters.filterStatus);
     }
-    if (filters.filterPeriodStart) {
-      const filterDate = new Date(filters.filterPeriodStart);
-      filtered = filtered.filter((i) => new Date(i.periodStart) >= filterDate);
+    if (filters.filterYear) {
+      const y = parseInt(filters.filterYear, 10);
+      if (!isNaN(y)) {
+        filtered = filtered.filter((i) => Number(i.year) === y);
+      }
     }
-    if (filters.filterPeriodEnd) {
-      const filterDate = new Date(filters.filterPeriodEnd);
-      filtered = filtered.filter((i) => new Date(i.periodEnd) <= filterDate);
+    if (filters.filterMonth) {
+      const m = parseInt(filters.filterMonth, 10);
+      if (!isNaN(m)) {
+        filtered = filtered.filter((i) => Number(i.month) === m);
+      }
     }
 
     return filtered;
   }, [invoices, filters, loggedUser]);
+
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years: number[] = [];
+    for (let y = 2000; y <= currentYear; y++) {
+      years.push(y);
+    }
+    return years;
+  }, []);
 
   const columns = [
     {
@@ -228,14 +261,20 @@ export const Invoices = () => {
       render: (invoice: Invoice) => invoice.user?.name || '-',
     },
     {
-      key: 'periodStart',
-      label: 'Início do Período',
-      render: (invoice: Invoice) => formatDateOnly(String(invoice.periodStart)),
+      key: 'companyName',
+      label: 'Empresa',
+      render: (invoice: Invoice) => invoice.user?.company?.name || '-',
     },
     {
-      key: 'periodEnd',
-      label: 'Fim do Período',
-      render: (invoice: Invoice) => formatDateOnly(String(invoice.periodEnd)),
+      key: 'companyCnpj',
+      label: 'CNPJ',
+      render: (invoice: Invoice) => invoice.user?.company?.cnpj || '-',
+    },
+    {
+      key: 'competence',
+      label: 'Competência',
+      render: (invoice: Invoice) =>
+        `${String(invoice.month).padStart(2, '0')}/${invoice.year}`,
     },
     {
       key: 'value',
@@ -252,6 +291,22 @@ export const Invoices = () => {
           </span>
         );
       },
+    },
+    {
+      key: 'statusMessage',
+      label: 'Mensagem',
+      render: (invoice: Invoice) =>
+        invoice.statusMessage ? (
+          <button
+            type="button"
+            onClick={() => setStatusMessageModal({ isOpen: true, invoice })}
+            className="text-primary-600 hover:text-primary-800 text-sm font-medium underline transition-colors"
+          >
+            Ver mais
+          </button>
+        ) : (
+          <span className="text-sm text-secondary-400">-</span>
+        ),
     },
     {
       key: 'file',
@@ -323,33 +378,45 @@ export const Invoices = () => {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-1">Período Início</label>
-            <input
-              type="date"
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Ano</label>
+            <select
               className="input-base"
-              value={filters.filterPeriodStart}
-              onChange={(e) => setFilters({ ...filters, filterPeriodStart: e.target.value })}
-            />
+              value={filters.filterYear}
+              onChange={(e) => setFilters({ ...filters, filterYear: e.target.value })}
+            >
+              <option value="">Todos</option>
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-1">Período Fim</label>
-            <input
-              type="date"
+            <label className="block text-sm font-medium text-secondary-700 mb-1">Mês</label>
+            <select
               className="input-base"
-              value={filters.filterPeriodEnd}
-              onChange={(e) => setFilters({ ...filters, filterPeriodEnd: e.target.value })}
-            />
+              value={filters.filterMonth}
+              onChange={(e) => setFilters({ ...filters, filterMonth: e.target.value })}
+            >
+              <option value="">Todos</option>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {String(m).padStart(2, '0')}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
-        {(filters.filterUser || filters.filterStatus || filters.filterPeriodStart || filters.filterPeriodEnd) && (
+        {(filters.filterUser || filters.filterStatus || filters.filterYear || filters.filterMonth) && (
           <div className="mt-4">
             <button
               onClick={() => {
                 setFilters({
                   filterUser: '',
                   filterStatus: '',
-                  filterPeriodStart: '',
-                  filterPeriodEnd: '',
+                  filterYear: '',
+                  filterMonth: '',
                 });
               }}
               className="btn-secondary text-sm"
@@ -367,6 +434,67 @@ export const Invoices = () => {
         onDelete={handleDelete}
         loading={loading}
       />
+
+      {/* Modal de Visualização da Mensagem de Status */}
+      <Modal
+        isOpen={statusMessageModal.isOpen}
+        onClose={() => setStatusMessageModal({ isOpen: false, invoice: null })}
+        title="Mensagem da Fatura"
+      >
+        <div className="space-y-4">
+          {statusMessageModal.invoice && (
+            <>
+              <div className="bg-secondary-50 p-3 rounded-lg">
+                <p className="text-sm text-secondary-700">
+                  <strong>Usuário:</strong> {statusMessageModal.invoice.user?.name || '-'}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Empresa:</strong> {statusMessageModal.invoice.user?.company?.name || '-'}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>CNPJ:</strong> {statusMessageModal.invoice.cnpj}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Competência:</strong>{' '}
+                  {`${String(statusMessageModal.invoice.month).padStart(2, '0')}/${statusMessageModal.invoice.year}`}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Valor:</strong> {formatCurrencyBRL(statusMessageModal.invoice.value)}
+                </p>
+                <p className="text-sm text-secondary-700 mt-1">
+                  <strong>Status:</strong>{' '}
+                  <span
+                    className={`inline-flex items-center rounded-md ${statusColors[statusMessageModal.invoice.status]} px-2 py-1 text-xs font-medium`}
+                  >
+                    {statusTexts[statusMessageModal.invoice.status]}
+                  </span>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-secondary-700 mb-2">
+                  Mensagem
+                </label>
+                <div className="bg-white border border-secondary-200 rounded-lg p-4 min-h-[100px]">
+                  <p className="text-sm text-secondary-700 whitespace-pre-wrap break-words">
+                    {statusMessageModal.invoice.statusMessage}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end pt-4 border-t border-neutral-200">
+            <button
+              type="button"
+              onClick={() => setStatusMessageModal({ isOpen: false, invoice: null })}
+              className="btn-primary"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={isModalOpen}
@@ -426,20 +554,26 @@ export const Invoices = () => {
               </div>
             </>
           )}
-          <Input
-            type="date"
-            label="Início do Período"
-            required
-            register={register('periodStart')}
-            error={errors.periodStart?.message}
-          />
-          <Input
-            type="date"
-            label="Fim do Período"
-            required
-            register={register('periodEnd')}
-            error={errors.periodEnd?.message}
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Select
+              label="Ano"
+              register={register('year')}
+              error={errors.year?.message}
+              options={yearOptions.map((y) => ({
+                value: String(y),
+                label: String(y),
+              }))}
+            />
+            <Select
+              label="Mês"
+              register={register('month')}
+              error={errors.month?.message}
+              options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                value: String(m),
+                label: String(m).padStart(2, '0'),
+              }))}
+            />
+          </div>
           <Controller
             name="value"
             control={control}
@@ -488,16 +622,29 @@ export const Invoices = () => {
               <p className="text-xs text-red-600 mt-1">{errors.filePath.message}</p>
             )}
           </div>
-          <Select
-            label="Status"
-            register={register('status')}
-            required
-            error={errors.status?.message}
-            options={Object.values(InvoiceStatus).map((status) => ({
-              value: status,
-              label: status,
-            }))}
-          />
+          {editingInvoice && (
+            <>
+              <Select
+                label="Status"
+                register={register('status')}
+                error={errors.status?.message}
+                options={Object.values(InvoiceStatus).map((status) => ({
+                  value: status,
+                  label: statusTexts[status] ?? status,
+                }))}
+                disabled={loggedUser?.role !== UserRole.PEOPLE_MANAGER}
+              />
+              <Textarea
+                label="Mensagem (motivo da alteração de status)"
+                register={register('statusMessage')}
+                error={errors.statusMessage?.message}
+                rows={3}
+                placeholder={loggedUser?.role === UserRole.PEOPLE_MANAGER ? 'Ex.: Documentação incompleta; valor conferido.' : ''}
+                disabled={loggedUser?.role !== UserRole.PEOPLE_MANAGER}
+                className={loggedUser?.role !== UserRole.PEOPLE_MANAGER ? 'bg-secondary-100 cursor-not-allowed' : ''}
+              />
+            </>
+          )}
           <div className="flex justify-end space-x-2 pt-4">
             <button
               type="button"

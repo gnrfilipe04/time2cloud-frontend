@@ -52,7 +52,8 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <div className="card overflow-hidden">
-      <table className="min-w-full divide-y divide-neutral-200">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-neutral-200">
         <thead className="bg-secondary-50">
           <tr>
             {selectable && (
@@ -204,6 +205,7 @@ export function DataTable<T extends { id: string }>({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

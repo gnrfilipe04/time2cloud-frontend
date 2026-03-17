@@ -48,7 +48,7 @@ export const routePermissions: RoutePermission[] = [
   {
     path: '/invoices',
     label: 'Faturas',
-    roles: [UserRole.ADMIN, UserRole.FINANCE, UserRole.CONSULTANT],
+    roles: [UserRole.ADMIN, UserRole.FINANCE, UserRole.CONSULTANT, UserRole.PEOPLE_MANAGER],
   },
   {
     path: '/function-roles',
