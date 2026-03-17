@@ -147,8 +147,15 @@ export const Invoices = () => {
       };
 
       if (editingInvoice) {
-        payload.status = data.status ?? editingInvoice.status;
-        if (data.statusMessage !== undefined) payload.statusMessage = data.statusMessage || null;
+        const isConsultant = loggedUser?.role === UserRole.CONSULTANT;
+        if (isConsultant) {
+          // Regra: sempre que o usuário (consultor) salvar, status volta para PENDING
+          payload.status = InvoiceStatus.PENDING;
+          payload.statusMessage = null;
+        } else {
+          payload.status = data.status ?? editingInvoice.status;
+          if (data.statusMessage !== undefined) payload.statusMessage = data.statusMessage || null;
+        }
         await api.patch(`/invoices/${editingInvoice.id}`, {
           ...payload,
           userId: editingInvoice.userId,
@@ -253,6 +260,21 @@ export const Invoices = () => {
     }
     return years;
   }, []);
+
+  const isInvoiceLockedForCurrentUser = (invoice: Invoice) => {
+    if (!loggedUser) return false;
+    const isOwner = invoice.userId === loggedUser.id;
+    const isConsultant = loggedUser.role === UserRole.CONSULTANT;
+
+    // Regra: usuário (consultor) só pode editar/apagar se a fatura for dele e estiver REJECTED
+    if (isConsultant) {
+      if (!isOwner) return true;
+      return invoice.status !== InvoiceStatus.REJECTED;
+    }
+
+    // Outros perfis (gestores, admin, financeiro) podem editar/apagar sempre
+    return false;
+  };
 
   const columns = [
     {
@@ -433,6 +455,7 @@ export const Invoices = () => {
         onEdit={handleEdit}
         onDelete={handleDelete}
         loading={loading}
+        isItemDisabled={isInvoiceLockedForCurrentUser}
       />
 
       {/* Modal de Visualização da Mensagem de Status */}
