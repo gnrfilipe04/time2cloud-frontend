@@ -16,7 +16,17 @@ const userSchema = z.object({
   role: z.nativeEnum(UserRole),
   contractType: z.nativeEnum(ContractType),
   companyId: z.string().optional(),
-  hourlyRate: z.string().optional(),
+  hourlyRate: z
+    .string()
+    .min(1, 'Valor hora é obrigatório')
+    .refine((val) => {
+      const num = Number(
+        String(val)
+          .replace(/\./g, '')
+          .replace(',', '.'),
+      );
+      return !isNaN(num) && num > 0;
+    }, 'Valor hora deve ser maior que zero'),
   monthlyRate: z.string().optional(),
   isActive: z.boolean(),
 });
@@ -80,7 +90,7 @@ export const Users = () => {
       role: UserRole.CONSULTANT,
       contractType: ContractType.CLT,
       companyId: '',
-      hourlyRate: undefined,
+      hourlyRate: '',
       monthlyRate: undefined,
       isActive: true,
     });
@@ -96,7 +106,10 @@ export const Users = () => {
       role: user.role,
       contractType: (user.contractType as ContractType) || ContractType.CLT,
       companyId: user.companyId || user.company?.id || '',
-      hourlyRate: user.hourlyRate != null ? String(user.hourlyRate) : undefined,
+      hourlyRate:
+        user.hourlyRate != null
+          ? String(user.hourlyRate.toLocaleString('pt-BR', { minimumFractionDigits: 2 }))
+          : '',
       monthlyRate: user.monthlyRate != null ? String(user.monthlyRate) : undefined,
       isActive: user.isActive,
     });
@@ -119,14 +132,24 @@ export const Users = () => {
 
   const onSubmit = async (data: UserFormData) => {
     try {
+      const parseCurrency = (value?: string | null): number | null => {
+        if (value == null || String(value).trim() === '') return null;
+        const num = Number(
+          String(value)
+            .replace(/\./g, '')
+            .replace(',', '.'),
+        );
+        return isNaN(num) ? null : num;
+      };
+
       const payload = {
         name: data.name,
         email: data.email,
         role: data.role,
         contractType: data.contractType,
         companyId: data.companyId && data.companyId.trim() !== '' ? data.companyId : null,
-        hourlyRate: data.hourlyRate != null && String(data.hourlyRate).trim() !== '' ? Number(data.hourlyRate) : null,
-        monthlyRate: data.monthlyRate != null && String(data.monthlyRate).trim() !== '' ? Number(data.monthlyRate) : null,
+        hourlyRate: parseCurrency(data.hourlyRate)!,
+        monthlyRate: parseCurrency(data.monthlyRate),
         isActive: data.isActive,
       } as Record<string, unknown>;
       if (editingUser) {
