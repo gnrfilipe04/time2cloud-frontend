@@ -13,6 +13,7 @@ import { statusColors, statusTexts } from '../constants';
 import { useFilters } from '../hooks/useFilters';
 import { formatCurrencyBRL } from '../utils/currency';
 import { formatDateOnly, toDateInputValue } from '../utils/date';
+import { fetchEstimatedInvoiceValue } from '../utils/invoices';
 
 const invoiceSchema = z.object({
   year: z
@@ -51,6 +52,7 @@ export const Invoices = () => {
     isOpen: false,
     invoice: null,
   });
+  const [estimatedValues, setEstimatedValues] = useState<Record<string, number>>({});
 
   const {
     register,
@@ -66,6 +68,9 @@ export const Invoices = () => {
       status: InvoiceStatus.PENDING,
     },
   });
+
+  const watchedYear = watch('year');
+  const watchedMonth = watch('month');
 
   // Filtros persistentes
   const [filters, setFilters] = useFilters('invoices', {
@@ -87,6 +92,32 @@ export const Invoices = () => {
       ]);
       setInvoices(invoicesRes.data);
       setUsers(usersRes.data);
+
+      // Pré-calcula valores estimados para as faturas exibidas
+      const estimates: Record<string, number> = {};
+      const uniqueKeys = new Map<string, { userId: string; year: number; month: number }>();
+
+      invoicesRes.data.forEach((inv) => {
+        const key = `${inv.userId}-${inv.year}-${inv.month}`;
+        if (!uniqueKeys.has(key)) {
+          uniqueKeys.set(key, { userId: inv.userId, year: inv.year, month: inv.month });
+        }
+      });
+
+      await Promise.all(
+        Array.from(uniqueKeys.values()).map(async ({ userId, year, month }) => {
+          const value = await fetchEstimatedInvoiceValue(
+            userId,
+            year,
+            month,
+            usersRes.data.find((u) => u.id === userId)?.hourlyRate ?? null,
+          );
+          const key = `${userId}-${year}-${month}`;
+          estimates[key] = value;
+        }),
+      );
+
+      setEstimatedValues(estimates);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {
@@ -106,6 +137,33 @@ export const Invoices = () => {
     });
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    const fillValueFromTimesheet = async () => {
+      if (!loggedUser || !watchedYear || !watchedMonth || editingInvoice) return;
+      const yearNum = parseInt(watchedYear, 10);
+      const monthNum = parseInt(watchedMonth, 10);
+      if (isNaN(yearNum) || isNaN(monthNum)) return;
+      try {
+        const value = await fetchEstimatedInvoiceValue(
+          loggedUser.id,
+          yearNum,
+          monthNum,
+          loggedUser.hourlyRate ?? null,
+        );
+        setValue('value', value > 0 ? value.toFixed(2) : '0.00', {
+          shouldValidate: true,
+          shouldDirty: true,
+        });
+      } catch (err) {
+        // Em caso de erro, mantemos o formulário utilizável e sugerimos 0
+        console.error('Não foi possível sugerir valor da fatura a partir dos lançamentos:', err);
+        setValue('value', '0.00', { shouldValidate: true, shouldDirty: true });
+      }
+    };
+
+    fillValueFromTimesheet();
+  }, [loggedUser, watchedYear, watchedMonth, editingInvoice, setValue]);
 
   const handleEdit = (invoice: Invoice) => {
     setEditingInvoice(invoice);
@@ -302,6 +360,18 @@ export const Invoices = () => {
       key: 'value',
       label: 'Valor',
       render: (invoice: Invoice) => formatCurrencyBRL(invoice.value),
+    },
+    {
+      key: 'estimatedValue',
+      label: 'Valor estimado',
+      render: (invoice: Invoice) => {
+        const key = `${invoice.userId}-${invoice.year}-${invoice.month}`;
+        const value = estimatedValues[key];
+        if (value == null) {
+          return <span className="text-secondary-400 text-sm">Calculando…</span>;
+        }
+        return <span className="text-secondary-700 text-sm">{formatCurrencyBRL(value)}</span>;
+      },
     },
     {
       key: 'status',
