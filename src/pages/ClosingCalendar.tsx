@@ -53,7 +53,8 @@ export const ClosingCalendar = () => {
   const [closingType, setClosingType] = useState<ClosingType>(ClosingType.TYPE_1);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [calendars, setCalendars] = useState<ClosingCalendarType[]>([]);
+  const [, setCalendars] = useState<ClosingCalendarType[]>([]);
+
   const [currentCalendar, setCurrentCalendar] = useState<ClosingCalendarType | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);

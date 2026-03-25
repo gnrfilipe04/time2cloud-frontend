@@ -7,12 +7,11 @@ import { Invoice, User, InvoiceStatus, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
-import { Input, Select, CurrencyInput, Textarea } from '../components/Input';
+import { Select, CurrencyInput, Textarea } from '../components/Input';
 import { SelectSearchable } from '../components/SelectSearchable';
 import { statusColors, statusTexts } from '../constants';
 import { useFilters } from '../hooks/useFilters';
 import { formatCurrencyBRL } from '../utils/currency';
-import { formatDateOnly, toDateInputValue } from '../utils/date';
 import { fetchEstimatedInvoiceValue } from '../utils/invoices';
 
 const invoiceSchema = z.object({

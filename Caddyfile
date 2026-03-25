@@ -1,0 +1,7 @@
+:80 {
+	root * /usr/share/caddy
+	file_server
+
+	# suporte a SPA (React Router)
+	try_files {path} /index.html
+}
