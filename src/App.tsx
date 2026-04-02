@@ -14,6 +14,7 @@ import { TimesheetEntries } from './pages/TimesheetEntries';
 import { Invoices } from './pages/Invoices';
 import { FunctionRoles } from './pages/FunctionRoles';
 import { ClosingCalendar } from './pages/ClosingCalendar';
+import { AuditLogs } from './pages/AuditLogs';
 import { getAllowedRolesForPath } from './utils/permissions';
 
 function App() {
@@ -147,6 +148,18 @@ function App() {
                 <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/calendar')}>
                   <Layout>
                     <ClosingCalendar />
+                  </Layout>
+                </RoleProtectedRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/audit-logs"
+            element={
+              <ProtectedRoute>
+                <RoleProtectedRoute allowedRoles={getAllowedRolesForPath('/audit-logs')}>
+                  <Layout>
+                    <AuditLogs />
                   </Layout>
                 </RoleProtectedRoute>
               </ProtectedRoute>

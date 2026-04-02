@@ -110,6 +110,44 @@ export enum StepStatus {
   REJECTED = 'REJECTED',
 }
 
+export enum AuditEntityType {
+  TIMESHEET_ENTRY = 'TIMESHEET_ENTRY',
+  TIMESHEET_SUBMISSION = 'TIMESHEET_SUBMISSION',
+  INVOICE = 'INVOICE',
+  PROJECT = 'PROJECT',
+  PROJECT_ASSIGNMENT = 'PROJECT_ASSIGNMENT',
+  USER = 'USER',
+  CLOSING_CALENDAR = 'CLOSING_CALENDAR',
+}
+
+export enum AuditActionType {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+  STATUS_CHANGED = 'STATUS_CHANGED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  REQUESTED_CHANGES = 'REQUESTED_CHANGES',
+  SUBMITTED = 'SUBMITTED',
+  UPLOADED = 'UPLOADED',
+}
+
+export interface AuditLog {
+  id: string;
+  entityType: AuditEntityType;
+  entityId: string;
+  action: AuditActionType;
+  performedById?: string | null;
+  performedBy?: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
+  module?: string | null;
+  message?: string | null;
+  oldValues?: unknown;
+  newValues?: unknown;
+  changes?: unknown;
+  metadata?: unknown;
+  createdAt: string;
+}
+
 export interface User {
   id: string;
   name: string;

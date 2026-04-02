@@ -60,6 +60,11 @@ export const routePermissions: RoutePermission[] = [
     label: 'Calendário',
     roles: [UserRole.PEOPLE_MANAGER],
   },
+  {
+    path: '/audit-logs',
+    label: 'Histórico',
+    roles: [UserRole.ADMIN, UserRole.PEOPLE_MANAGER],
+  },
 ];
 
 export const canAccessRoute = (userRole: UserRole, path: string): boolean => {
