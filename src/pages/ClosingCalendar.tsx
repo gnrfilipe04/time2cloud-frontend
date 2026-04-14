@@ -80,6 +80,10 @@ export const ClosingCalendar = () => {
     appliesToRole: '' as UserRole | '',
   });
 
+  const toUtcIsoFromLocalDateTime = (value: string): string => {
+    return new Date(value).toISOString();
+  };
+
   const fetchCalendars = async () => {
     setLoading(true);
     try {
@@ -194,8 +198,12 @@ export const ClosingCalendar = () => {
         month,
         periodStart: configForm.periodStart,
         periodEnd: configForm.periodEnd,
-        entryDeadline: configForm.entryDeadline || null,
-        submitDeadline: configForm.submitDeadline || null,
+        entryDeadline: configForm.entryDeadline
+          ? toUtcIsoFromLocalDateTime(configForm.entryDeadline)
+          : null,
+        submitDeadline: configForm.submitDeadline
+          ? toUtcIsoFromLocalDateTime(configForm.submitDeadline)
+          : null,
         note: configForm.note || null,
       };
       const res = await api.post<ClosingCalendarType>('/closing-calendars', payload);
@@ -258,7 +266,7 @@ export const ClosingCalendar = () => {
     try {
       await api.post(`/closing-calendars/${currentCalendar.id}/rules`, {
         target: ruleForm.target,
-        deadlineAt: ruleForm.deadlineAt,
+        deadlineAt: toUtcIsoFromLocalDateTime(ruleForm.deadlineAt),
         enforcement: ruleForm.enforcement,
         message: ruleForm.message || undefined,
         appliesToRole: ruleForm.appliesToRole || null,
