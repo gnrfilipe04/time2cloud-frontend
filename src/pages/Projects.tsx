@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '../config/api';
-import { Project, Client, Company, User } from '../types';
+import { Project, Client, User } from '../types';
 import { DataTable } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import { Input } from '../components/Input';
@@ -13,7 +13,6 @@ import { useFilters } from '../hooks/useFilters';
 const projectSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   clientId: z.string().min(1, 'Cliente é obrigatório'),
-  companyId: z.string().optional(),
   managerId: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -26,7 +25,6 @@ type ProjectFormData = z.infer<typeof projectSchema>;
 export const Projects = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,7 +44,6 @@ export const Projects = () => {
   // Filtros persistentes
   const [filters, setFilters] = useFilters('projects', {
     filterClient: '',
-    filterCompany: '',
     filterManager: '',
     filterStatus: '',
   });
@@ -57,15 +54,13 @@ export const Projects = () => {
 
   const fetchData = async () => {
     try {
-      const [projectsRes, clientsRes, companiesRes, usersRes] = await Promise.all([
+      const [projectsRes, clientsRes, usersRes] = await Promise.all([
         api.get<Project[]>('/projects'),
         api.get<Client[]>('/clients'),
-        api.get<Company[]>('/companies'),
         api.get<User[]>('/users'),
       ]);
       setProjects(projectsRes.data);
       setClients(clientsRes.data);
-      setCompanies(companiesRes.data);
       setUsers(usersRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -79,7 +74,6 @@ export const Projects = () => {
     reset({
       name: '',
       clientId: '',
-      companyId: '',
       managerId: '',
       startDate: '',
       endDate: '',
@@ -94,7 +88,6 @@ export const Projects = () => {
     reset({
       name: project.name,
       clientId: project.clientId,
-      companyId: project.companyId || '',
       managerId: project.managerId || '',
       startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
       endDate: project.endDate ? new Date(project.endDate).toISOString().split('T')[0] : '',
@@ -120,13 +113,13 @@ export const Projects = () => {
 
   const onSubmit = async (data: ProjectFormData) => {
     try {
+      const { managerId, startDate, endDate, costCenter, ...rest } = data;
       const payload: any = {
-        ...data,
-        companyId: data.companyId || undefined,
-        managerId: data.managerId || undefined,
-        startDate: data.startDate ? new Date(data.startDate) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
-        costCenter: data.costCenter || undefined,
+        ...rest,
+        managerId: managerId || undefined,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        costCenter: costCenter || undefined,
       };
 
       if (editingProject) {
@@ -148,9 +141,6 @@ export const Projects = () => {
 
     if (filters.filterClient) {
       filtered = filtered.filter((p) => p.clientId === filters.filterClient);
-    }
-    if (filters.filterCompany) {
-      filtered = filtered.filter((p) => p.companyId === filters.filterCompany);
     }
     if (filters.filterManager) {
       filtered = filtered.filter((p) => p.managerId === filters.filterManager);
@@ -198,7 +188,7 @@ export const Projects = () => {
       {/* Filtros */}
       <div className="card mb-6">
         <h3 className="text-lg font-semibold text-secondary-700 mb-4">Filtros</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <SelectSearchable
             label="Cliente"
             value={filters.filterClient}
@@ -208,16 +198,6 @@ export const Projects = () => {
               ...clients.map((client) => ({ value: client.id, label: client.name })),
             ]}
             placeholder="Todos os clientes"
-          />
-          <SelectSearchable
-            label="Empresa"
-            value={filters.filterCompany}
-            onChange={(value) => setFilters({ ...filters, filterCompany: value })}
-            options={[
-              { value: '', label: 'Todas as empresas' },
-              ...companies.map((company) => ({ value: company.id, label: company.name })),
-            ]}
-            placeholder="Todas as empresas"
           />
           <SelectSearchable
             label="Gerente"
@@ -240,13 +220,12 @@ export const Projects = () => {
             />
           </div>
         </div>
-        {(filters.filterClient || filters.filterCompany || filters.filterManager || filters.filterStatus) && (
+        {(filters.filterClient || filters.filterManager || filters.filterStatus) && (
           <div className="mt-4">
             <button
               onClick={() => {
                 setFilters({
                   filterClient: '',
-                  filterCompany: '',
                   filterManager: '',
                   filterStatus: '',
                 });
@@ -291,17 +270,6 @@ export const Projects = () => {
               ...clients.map((client) => ({ value: client.id, label: client.name })),
             ]}
             placeholder="Selecione um cliente"
-          />
-          <SelectSearchable
-            label="Empresa"
-            value={watch('companyId') || ''}
-            onChange={(value) => setValue('companyId', value, { shouldValidate: true })}
-            error={errors.companyId?.message}
-            options={[
-              { value: '', label: 'Nenhuma' },
-              ...companies.map((company) => ({ value: company.id, label: company.name })),
-            ]}
-            placeholder="Nenhuma"
           />
           <SelectSearchable
             label="Gerente"
